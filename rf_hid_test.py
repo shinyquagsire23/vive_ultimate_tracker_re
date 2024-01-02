@@ -112,13 +112,125 @@ RF_CMD_SET_EVENT_ON = 0xD
 RF_CMD_SET_WAIT_START_IMU = 0xE
 RF_CMD_QUIT = 0xF
 
+BT_CMD_INIT = 0x0
+BT_CMD_ONOFF = 0x1
+BT_CMD_REPAIR = 0x2
+BT_CMD_RESTART = 0x3
+BT_CMD_SEND_ACK = 0x4
+BT_CMD_SEND_DATA = 0x5
+BT_CMD_QUIT = 0x6
+
+# Internal Horus CMD thread
+HORUS_CMD_POWER = 0x0
+HORUS_CMD_UVC = 0x1
+HORUS_CMD_LED_STATUS_UPDATE = 0x2
+HORUS_CMD_VRC_APPEAR = 0x3
+HORUS_CMD_VRC_DISAPPEAR = 0x4
+HORUS_CMD_VRC_POWEROFF = 0x5
+HORUS_CMD_CAMERA_SSR = 0x6
+HORUS_CMD_IMU_SSR = 0x7
+HORUS_CMD_DO_FT = 0x8
+HORUS_CMD_FT_APPEAR = 0x9
+HORUS_CMD_FT_DISAPPEAR = 0xA
+HORUS_CMD_UPDATE_DEVICE_ID = 0xB
+HORUS_CMD_SET_TRACKING_MODE = 0xC
+
+# Wait state enum
+WS_STANDBY = 0x0
+WS_CONNECTING = 0x1
+WS_REPAIRING = 0x2
+WS_CONNECTED = 0x3
+WS_TRACKING = 0x4
+WS_RECOVERY = 0x5
+WS_REBOOT = 0x6
+WS_SHUTDOWN = 0x7
+WS_OCVR = 0x8
+WS_PCVR = 0x9
+WS_EYVR = 0xa
+WS_RESTART = 0xb
+
+# maybe?
 BT_CMD_ACK = 0xc9
 
+# idk, "ack"s
 ACK_WIFI_CONNECT = 0x43
 ACK_SEND_WIFI_HOST_SSID = 0x48
 ACK_SET_TRACKING_HOST_IP = 0x49
 ACK_RECV_ACK = 0x50
 ACK_SEND_WIFI_SSID = 0x74
+
+# There is some level of abstraction between the RF dongle's HID and these commands,
+# but these report IDs are still used in the responses.
+# 0x0
+RF_REPORT_HID_CMD = 0x01
+# 0x02
+RF_REPORT_RECENTLY_CMD_DEBUG_CMD = 0x03
+RF_REPORT_ACTR_STATUS = 0x4
+# 0x5 .. 0xF
+RF_REPORT_FLAG_OP_A = 0x10 # FW_INFO?
+RF_REPORT_FLAG_OP_B = 0x11 # GG_FLAG?
+RF_REPORT_NEW_CR_FLAGS = 0x12
+RF_REPORT_RATE = 0x13
+RF_REPORT_BATTERY_LEVEL = 0x14
+RF_REPORT_MCU_VERSION = 0x15
+RF_REPORT_RF_IDS = 0x16
+RF_REPORT_CHANGE_BEHAVIOR = 0x17 # handleReportRequestRFChangeBehavior
+RF_REPORT_RF_VERSION = 0x18
+RF_REPORT_RF_DETAIL_STATUS = 0x19
+RF_REPORT_RF_STATUS = 0x1A
+RF_REPORT_FINISH_COMMAND_MODE = 0x1B # rf_spi_gotResult
+# 0x1C, 0x1D, 0x1E
+RF_REPORT_RF_REBOOT = 0x1F
+# 0x20 .. 0x2F
+RF_REPORT_FOTA_INIT = 0x30
+RF_REPORT_FOTA_MODE_SWITCH = 0x31
+RF_REPORT_FOTA_DEINIT = 0x32
+RF_REPORT_FOTA_WRITE_FW = 0x33
+RF_REPORT_FOTA_MARK_TARGET = 0x34
+# 0x35 .. 0x3F
+RF_REPORT_FWU_INIT = 0x40
+RF_REPORT_FWU_ERASE = 0x43
+RF_REPORT_FWU_WRITE = 0x44
+RF_REPORT_FWU_COMPUTE_CRC = 0x45
+RF_REPORT_FWU_GET_CRC = 0x46
+RF_REPORT_FWU_SIGN = 0x48
+# 0x49 .. 0x4F
+RF_REPORT_RF_MODE_OP = 0x50
+RF_REPORT_WRITE_RF = 0x51
+# 0x52 .. 0x5F
+RF_REPORT_WATCHDOG_TEST = 0x68
+RF_REPORT_BATTERY_OP = 0x6A
+RF_REPORT_USB_REPAIR = 0x6E
+RF_REPORT_CALIB_OP = 0x6F
+
+
+# Known valid dongle commands:
+# 0x18 -> RF_REPORT_RF_VERSION, [0]->[0,0,0], [1]->[0,0], [2]->[2,0,0,0,...], [3]->[3], [4]->[4]
+# 0x1A -> GetFusionMode, GetRoleId?
+# 0x1D -> RF_REPORT_CHANGE_BEHAVIOR
+# 0x1E -> gets RF_REPORT_CHANGE_BEHAVIOR w/o changing anything
+# 0x21 -> RF_REPORT_RF_MODE_OP?
+# 0x26 -> ??, returns 0x40 00s
+# 0x27 -> RF_REPORT_RF_IDS, "Proprietary" in string
+# 0x98 -> ??
+# 0x99 -> ??
+# 0x9A -> ??
+# 0x9E -> ??
+# 0x9F -> ?? always returns 0x10 00s
+# 0xEB -> Reboot
+# 0xEF -> ??
+# 0xF0 -> a lot of ID stuff
+# 0xF4 -> ?
+# 0xFA -> used in DisableCharging?
+
+'''
+from: libftm_lib_rfcmd_ble.so
+
+cmd_read_battery_level: 02 14 02 00/01 00
+cmd_read_ids: 02 16 02 xx xx
+read_version: 02 18 00
+cmd_rf_status: 02 1a 00
+'''
 
 device_list = hid.enumerate(VID_VIVE, PID_DONGLE)
 print(device_list)
@@ -157,10 +269,10 @@ def parse_rf_response(data):
     return err_ret, cmd_id, ret
 
 def parse_rf_incoming(data):
-    cmd_id, data_len = struct.unpack("<BB", data[:2])
+    cmd_id, data_len, unk = struct.unpack("<BBH", data[:4])
     #print(f"unk: {hex(unk)} cmd_id: {hex(cmd_id)} data_len: {hex(data_len)} unk2: {hex(unk2)} ")
 
-    ret = data[2:2+data_len-2]
+    ret = data[4:4+data_len-4]
     return cmd_id, ret
 
 def send_command(cmd_id, data=None):
@@ -180,6 +292,28 @@ def send_command(cmd_id, data=None):
             #hex_dump(data_ret)
             if cmd_ret == cmd_id:
                 return data_ret
+    except:
+        return bytes([])
+
+    return bytes([])
+
+
+def send_raw(data=None):
+    if data is None:
+        data = []
+    out = bytes(data)
+
+    out += bytes([0x0] * (0x40 - len(out)))
+    #print("Sending raw:")
+    #hex_dump(out)
+
+    try:
+        ret = device_hid1.send_feature_report(out)
+
+        resp = device_hid1.get_feature_report(0, 0x40)
+        #hex_dump(resp)
+            
+        return resp
     except:
         return bytes([])
 
@@ -212,12 +346,12 @@ def send_rf_command(cmd_id, data=None):
 def send_rf_command_to_id(to_id, cmd_id, data=None, do_read=True):
     if data is None:
         data = []
-    out = struct.pack("<BBBB", 0, 0, cmd_id, len(data)+4)
+    out = struct.pack("<BBB", 0, cmd_id, len(data)+4)
     out += bytes(data)
     out += struct.pack("<BB", to_id ^ 1, to_id & 1)
 
     out += bytes([0x0] * (0x40 - len(out)))
-    print("Sending:")
+    print(f"Sending to id {to_id}:")
     hex_dump(out)
 
 
@@ -227,9 +361,11 @@ def send_rf_command_to_id(to_id, cmd_id, data=None, do_read=True):
             return bytes([])
         for i in range(0, 10):
             resp = device_hid1.get_feature_report(0, 0x40)
-            hex_dump(resp)
+            if resp == out:
+                continue
+            hex_dump(resp[:5])
             err_ret, cmd_ret, data_ret = parse_rf_response(resp)
-            #hex_dump(data_ret)
+            hex_dump(data_ret)
             if err_ret:
                 print(f"Got error response: {hex(err_ret)}")
             if cmd_ret == cmd_id:
@@ -386,11 +522,41 @@ nAmplitude = 3
 #print(send_rf_command_to_id(0, 0x28, struct.pack("<BBB", 3, 6))) #PowerOffCr standby=1
 
 
+# 0x1D = ReportRequestRFChangeBehavior?
 bEnabled = 1
 print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 0, bEnabled))) # PairDevice
-#print(send_rf_command_to_id(0, 0x28, struct.pack("<BB", 1, val))) # RxPowerSaving
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 2, 0))) # RestartRf
-#print(send_rf_command_to_id(0, 0x28, struct.pack("<BBB", 3, 5, type))) # SetLpf (7,8,9,10)
+#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 1, 1))) # RxPowerSaving
+#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 2, 0))) # RxPowerSaving
+
+
+#for i in range(0, 0x100):
+#send_rf_command_to_id(1, 0x1D, [4, 1]) # RfChangeBehavior resp?
+
+
+#send_rf_command_to_id(0, 0x21, []) # rf mode op?
+
+
+#print(send_rf_command_to_id(0, 0xEB)) # reboots dongle
+
+
+'''
+for i in range(0, 256):
+    if i == 0xEB: continue
+    
+    #resp = send_raw([0x00, i, 0x05, 0x0, 0x01] + [0x0] * (0x40-4))
+    #if resp[2] != 0x5:
+    #    print(f"resp for {hex(i)}:")
+    #    hex_dump(resp)
+    
+    
+    print(send_rf_command_to_id(0, i, [0]))
+'''
+
+#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 1, val))) # RxPowerSaving
+#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 2, 0))) # RestartRf / hndl_restart_rx
+#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BBB", 3, 5, type))) # SetLpf (7,8,9,10)
+#print(send_rf_command_to_id(0, 0x1D, struct.pack("<B", 5))) # hndl_factory_reset
+
 #print(send_rf_command_to_id(0, 0xFA, [0x02, 0x6A, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0xC4])) # DisableCharging
 
 '''
@@ -472,7 +638,7 @@ idx = 0
 while True:
     idx += 1
     if idx > 10 and got_a_pair and num_paired < 2:
-        print(send_rf_command_to_id(1, 0x1D, struct.pack("<BB", 0, bEnabled))) # PairDevice
+        send_rf_command_to_id(1, 0x1D, struct.pack("<BB", 0, bEnabled)) # PairDevice
         idx = 0
 
     #print(send_rf_command_to_id(0, 0x28, struct.pack("<BBHHHH", 3, 1, nFrequency, nDuration, nAmplitude, 1))) #IdenfityController
@@ -484,27 +650,60 @@ while True:
     resp = device_hid1.read(0x400)
     if len(resp) <= 0:
         continue
-    print("dump:")
-    hex_dump(resp)
-    print("parsed:")
+    #print("dump:")
+    #hex_dump(resp)
+    #print("parsed:")
     # 0x18 = paired event, gives the 
     if resp[0] == 0x18:
         num_paired += 1
         got_a_pair = True
-    elif resp[0] == 0x1e or resp[0] == 0x1d:
+        #print("dump:")
+        #hex_dump(resp)
+        cmd_ret, data_ret = parse_rf_incoming(resp)
+        hex_dump(data_ret)
+        unk = data_ret[0]
+        is_repair = data_ret[1] # 0x1, id?
+        paired_mac = mac_str(data_ret[2:])
+        print(f"Paired {paired_mac}")
+    elif resp[0] == 0x1e or resp[0] == 0x1d or resp[0] == 0x29:
+        print(f"dump for {hex(resp[0])}:")
+        hex_dump(resp)
         cmd_ret, data_ret = parse_rf_incoming(resp)
         hex_dump(data_ret)
     elif resp[0] == 0x28:
         parse_incoming(resp)
 
-        for i in range(0, 256):
+        #print(send_rf_command_to_id(0, 0x28, struct.pack("<BB", 0, 0))) # RxPowerSaving
+        #print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 2, 0))) # RestartRf
+        #print(send_rf_command_to_id(0, 0x28, struct.pack("<BB", 3, 3))) #PowerOffCr standby=0
+        #print(send_rf_command(0xFA, [0x02, 0x6A, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0xC4])) # DisableCharging
+        #print(send_rf_command_to_id(0, 0x14, [])) #  read_battery_level
+        #print(send_raw([0x02, 0x1A, 0x00]))
+        #print(send_rf_command_to_id(0, 0x1E, []))
+        #send_raw([0x02, 0x1D, 0x02, 0x1A, 0x00])
+
+        #print(send_rf_command_to_id(0, 0xFA, [0x02, 0x6A, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0xC4])) # DisableCharging
+
+        #print(send_rf_command_to_id(0, 0x28, struct.pack("<BBHHHH", 3, 1, nFrequency, nDuration, nAmplitude, 0))) #RfHaptic
+
+        for i in range(1, 256):
+            #print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", i, bEnabled))) # PairDevice
             #print(send_rf_command_to_id(0, i))
             #print(send_rf_command_to_id(0, i, None, False))
             #print(send_rf_command_to_id(0, i, None, False)) #IdenfityController
             a='a'
+    else:
+        print("dump:")
+        hex_dump(resp)
 
     
+'''
+00 1d 1d 00 00 02 17 16 01 00 03 00 00 04 03 00 
+00 04 03 00 00 01 03 00 00 01 03 00 00 01 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
 
+'''
 
 '''
   uStack_79[1] = 0x1d;
@@ -513,4 +712,17 @@ while True:
   uStack_79[4] = 0;
   uStack_79[5] = uStack_79[6] ^ 1;
   uStack_79[6] = (byte)param_1 & 1;
+'''
+
+'''
+              idk_pcvr_mode(0,0); // HORUS_CMD_POWER 0
+              idk_pcvr_mode(0xb,0xffff); // HORUS_CMD_UPDATE_DEVICE_ID
+              idk_pcvr_mode(0xc,bVar9); // HORUS_CMD_SET_TRACKING_MODE
+              if (command_ == 0xa101) { // ocvr
+                uVar24 = 8;
+              }
+              else {
+                uVar24 = 9;
+              }
+              idk_pcvr_mode(0,uVar24); // HORUS_CMD_POWER, 
 '''
