@@ -10,6 +10,9 @@ VID_VALVE = 0x28de
 PID_VALVE_TRACKER = 0x2300
 PID_VALVE_DONGLE = 0x2101
 
+VID_NORDIC = 0x1915
+PID_DFU = 0x521f
+
 HID1_INTERFACE_NUM = 0
 HID3_INTERFACE_NUM = 1
 
@@ -150,14 +153,17 @@ WS_EYVR = 0xa
 WS_RESTART = 0xb
 
 # maybe?
-BT_CMD_ACK = 0xc9
+BT_CMD_CONNECTED = 0x33
+BT_CMD_DISCONNECTED = 0x34
+BT_CMD_ACK = 0xC9
+BT_CMD_CA = 0xCA
+BT_CMD_E7 = 0xE7
 
 # idk, "ack"s
-ACK_WIFI_CONNECT = 0x43
-ACK_SEND_WIFI_HOST_SSID = 0x48
-ACK_SET_TRACKING_HOST_IP = 0x49
-ACK_RECV_ACK = 0x50
-ACK_SEND_WIFI_SSID = 0x74
+'''
+ACK_RECV_ACK = "P"
+ACK_SEND_WIFI_SSID = "t"
+'''
 
 # There is some level of abstraction between the RF dongle's HID and these commands,
 # but these report IDs are still used in the responses.
@@ -179,7 +185,9 @@ RF_REPORT_RF_VERSION = 0x18
 RF_REPORT_RF_DETAIL_STATUS = 0x19
 RF_REPORT_RF_STATUS = 0x1A
 RF_REPORT_FINISH_COMMAND_MODE = 0x1B # rf_spi_gotResult
-# 0x1C, 0x1D, 0x1E
+# 0x1C
+RF_REPORT_1D = 0x1D # returns the same data as 0x1E. Response to pairing cmds?
+RF_REPORT_1E = 0x1E # returns the same data as 0x1D
 RF_REPORT_RF_REBOOT = 0x1F
 # 0x20 .. 0x2F
 RF_REPORT_FOTA_INIT = 0x30
@@ -195,7 +203,7 @@ RF_REPORT_FWU_COMPUTE_CRC = 0x45
 RF_REPORT_FWU_GET_CRC = 0x46
 RF_REPORT_FWU_SIGN = 0x48
 # 0x49 .. 0x4F
-RF_REPORT_RF_MODE_OP = 0x50
+RF_REPORT_RF_MODE_OP = 0x50 # not 100% on this?
 RF_REPORT_WRITE_RF = 0x51
 # 0x52 .. 0x5F
 RF_REPORT_WATCHDOG_TEST = 0x68
@@ -203,25 +211,98 @@ RF_REPORT_BATTERY_OP = 0x6A
 RF_REPORT_USB_REPAIR = 0x6E
 RF_REPORT_CALIB_OP = 0x6F
 
+ERR_BUSY = 0x2
+ERR_03 = 0x3
+ERR_UNSUPPORTED = 0xEE
 
-# Known valid dongle commands:
-# 0x18 -> RF_REPORT_RF_VERSION, [0]->[0,0,0], [1]->[0,0], [2]->[2,0,0,0,...], [3]->[3], [4]->[4]
-# 0x1A -> GetFusionMode, GetRoleId?
-# 0x1D -> RF_REPORT_CHANGE_BEHAVIOR
-# 0x1E -> gets RF_REPORT_CHANGE_BEHAVIOR w/o changing anything
-# 0x21 -> RF_REPORT_RF_MODE_OP?
-# 0x26 -> ??, returns 0x40 00s
-# 0x27 -> RF_REPORT_RF_IDS, "Proprietary" in string
-# 0x98 -> ??
-# 0x99 -> ??
-# 0x9A -> ??
-# 0x9E -> ??
-# 0x9F -> ?? always returns 0x10 00s
-# 0xEB -> Reboot
-# 0xEF -> ??
-# 0xF0 -> a lot of ID stuff
-# 0xF4 -> ?
-# 0xFA -> used in DisableCharging?
+#
+# ACK CMDs
+#
+# Wifi is limited to those starting with: P, FE?
+ACK_CALIB_1 = "C"
+ACK_CALIB_2 = "c"
+ACK_DEVICE_INFO = "N"
+
+ACK_ANA = "ANA" # TODO, "OT1"? recv'd from tracker on connect, data_id 0x4E (NANA?)
+ACK_DEVICE_SN = "ADS" # recv'd from tracker on connect, data_id 0x4E (NADS?)
+ACK_SHIP_SN = "ASS" # recv'd from tracker on connect, data_id 0x4E (NASS?)
+ACK_SKU_ID = "ASI" # recv'd from tracker on connect, data_id 0x4E (NASI?)
+ACK_PCB_ID = "API" # recv'd from tracker on connect, data_id 0x4E (NAPI?)
+ACK_VERSION = "AV1" # recv'd from tracker on connect, data_id 0x4E (NAV?)
+ACK_VERSION_ALT = "Av1" # not actually sent
+ACK_AZZ = "AZZ" # NAZZ? no data.
+ACK_AGN = "AGN" # NAGN? 0,1,0
+ACK_ARI = "ARI" # NARI?
+ACK_AGN = "AGN" # NAGN?
+
+ACK_LP = "LP" # identical to AGN? 0,1,0
+
+ACK_AFM = "AFM" # TODO
+ACK_CAMERA_FPS = "ACF"
+ACK_CAMERA_POLICY = "ACP"
+ACK_TRACKING_MODE = "ATM"
+ACK_TRACKING_HOST = "ATH"
+ACK_WIFI_HOST = "AWH"
+ACK_TS = "ATS" # TODO ?
+ACK_ROLE_ID = "ARI"
+ACK_AGI = "AGI" # complicated for some reason
+ACK_END_MAP = "ALE"
+ACK_ANI = "ANI" # TODO
+
+ACK_POWER_OFF_CLEAR_PAIRING_LIST = "APC"
+ACK_POWER_OFF = "APF"
+ACK_STANDBY = "APS"
+ACK_RESET = "APR"
+
+ACK_WIFI_SSID = "WS"
+ACK_WIFI_IP = "WI"
+ACK_WIFI_COUNTRY = "Wc"
+ACK_WIFI_FREQ = "Wf"
+ACK_WIFI_IP_2 = "Wi"
+ACK_WIFI_PW = "Wp"
+ACK_WIFI_SSID_APPEND = "Wt"
+ACK_WIFI_ERROR = "WE"
+ACK_FK = "FK" # TODO
+ACK_FW = "FW" # TODO
+ACK_FILE_DOWNLOAD = "FD"
+
+ACK_ERROR_CODE = "EC" # DEC?
+AKC_NA = "NA" # resends device info?
+
+
+DONGLE_CMD_18 = 0x18 #  -> RF_REPORT_RF_VERSION, [0]->[0,0,0], [1]->[0,0], [2]->[2,0,0,0,...], [3]->[3], [4]->[4]
+DONGLE_CMD_1A = 0x1A # -> GetFusionMode, GetRoleId?
+# 0x1B
+DONGLE_CMD_1C = 0x1C # -> Enters DFU bootloader?
+DONGLE_CMD_1D = 0x1D # -> RF_REPORT_CHANGE_BEHAVIOR
+DONGLE_CMD_1E = 0x1E # -> gets RF_REPORT_CHANGE_BEHAVIOR w/o changing anything
+# 0x1F, 0x20
+DONGLE_CMD_21 = 0x21 # -> RF_REPORT_RF_MODE_OP? BRICKED MY DONGLE :(
+# 0x22, 0x23, 0x24, 0x25
+DONGLE_CMD_26 = 0x26 # -> ??, echos back data after first 2 bytes? size 0x40 tho
+DONGLE_CMD_27 = 0x27 # -> RF_REPORT_RF_IDS, "Proprietary" in string
+
+DONGLE_CMD_98 = 0x98 # -> ??
+DONGLE_CMD_99 = 0x99 # -> ??
+DONGLE_CMD_9A = 0x9A # -> ??
+DONGLE_CMD_9C = 0x9C # -> "RequestData"?
+DONGLE_CMD_9D = 0x9D # -> "RequestData"?
+DONGLE_CMD_9E = 0x9E # -> ??
+DONGLE_CMD_9F = 0x9F # -> ?? always returns 0x10 00s
+DONGLE_CMD_EB = 0xEB # -> Reboot
+# 0xEC, 0xED, 0xEE
+DONGLE_CMD_EF = 0xEF # -> writes to ID stuff
+DONGLE_CMD_F0 = 0xF0 # -> a lot of ID stuff
+# 0xF1, 0xF2
+DONGLE_CMD_F3 = 0xF3 # -> ?
+DONGLE_CMD_F4 = 0xF4 # -> 00 00 00 00 00 00 2c hex_dump(send_rf_command(0xF4, [0,0,0,0,0,0])) ? 01 03 03 03 03 00 2c hex_dump(send_rf_command(0xF4, [1,  1,1,1,1,1])) ?
+DONGLE_CMD_F5 = 0xF5 # -> echos back data after first 2 bytes?
+DONGLE_CMD_F5 = 0xF6 # -> ?
+# 0xF7, 0xF8, 0xF9
+DONGLE_CMD_FA = 0xFA # -> used in DisableCharging?
+DONGLE_CMD_FF = 0xFF # -> ROM version
+
+fuzz_blacklist = [DONGLE_CMD_1C, DONGLE_CMD_21, DONGLE_CMD_EB, DONGLE_CMD_EF]
 
 '''
 from: libftm_lib_rfcmd_ble.so
@@ -231,6 +312,10 @@ cmd_read_ids: 02 16 02 xx xx
 read_version: 02 18 00
 cmd_rf_status: 02 1a 00
 '''
+
+# GLOBALS
+calib_1 = ""
+calib_2 = ""
 
 device_list = hid.enumerate(VID_VIVE, PID_DONGLE)
 print(device_list)
@@ -275,6 +360,18 @@ def parse_rf_incoming(data):
     ret = data[4:4+data_len-4]
     return cmd_id, ret
 
+def parse_1d_1e(data):
+    unk, data_len = struct.unpack("<BB", data[:2])
+    #print(f"unk: {hex(unk)} data_len: {hex(data_len)}")
+    hex_dump(data[:2])
+    data = data[2:2+data_len]
+    hex_dump(data[0:1])
+    data = data[1:]
+    pair_state = [0,0,0,0]
+    a,b,c, pair_state[0],pair_state[1],pair_state[2],pair_state[3], h = struct.unpack("<HHBLLLLB", data)
+    print(hex(a),hex(b),hex(c),hex(pair_state[0]),hex(pair_state[1]),hex(pair_state[2]),hex(pair_state[3]),hex(h))
+ 
+
 def send_command(cmd_id, data=None):
     if data is None:
         data = []
@@ -298,12 +395,13 @@ def send_command(cmd_id, data=None):
     return bytes([])
 
 
-def send_raw(data=None):
+def send_raw(data=None, pad=True):
     if data is None:
         data = []
     out = bytes(data)
 
-    out += bytes([0x0] * (0x40 - len(out)))
+    if pad:
+        out += bytes([0x0] * (0x40 - len(out)))
     #print("Sending raw:")
     #hex_dump(out)
 
@@ -322,10 +420,15 @@ def send_raw(data=None):
 def send_rf_command(cmd_id, data=None):
     if data is None:
         data = []
-    out = struct.pack("<BB", cmd_id, len(data)+2)
+    if type(data) is str:
+        data = data.encode("utf-8")
+    out = struct.pack("<BBB", 0, cmd_id, len(data)+2)
     out += bytes(data)
 
-    out += bytes([0x0] * (0x40 - len(out)))
+    out += bytes([0x0] * (0x41 - len(out)))
+
+    #print(f"Sending idk:")
+    #hex_dump(out)
 
     try:
         ret = device_hid1.send_feature_report(out)
@@ -333,7 +436,7 @@ def send_rf_command(cmd_id, data=None):
             resp = device_hid1.get_feature_report(0, 0x40)
             #hex_dump(resp)
             err_ret, cmd_ret, data_ret = parse_rf_response(resp)
-            hex_dump(data_ret)
+            #hex_dump(data_ret)
             if err_ret:
                 print(f"Got error response: {hex(err_ret)}")
             if cmd_ret == cmd_id:
@@ -346,6 +449,8 @@ def send_rf_command(cmd_id, data=None):
 def send_rf_command_to_id(to_id, cmd_id, data=None, do_read=True):
     if data is None:
         data = []
+    if type(data) is str:
+        data = data.encode("utf-8")
     out = struct.pack("<BBB", 0, cmd_id, len(data)+4)
     out += bytes(data)
     out += struct.pack("<BB", to_id ^ 1, to_id & 1)
@@ -414,15 +519,37 @@ def mac_str(b):
     return hex(b[0])[2:] + ":" + hex(b[1])[2:] + ":" + hex(b[2])[2:] + ":" + hex(b[3])[2:] + ":" + hex(b[4])[2:] + ":" + hex(b[5])[2:] 
 
 def parse_incoming(resp):
-    cmd_id, pkt_idx, device_addr, unk3, data_len = struct.unpack("<BH6sHB", resp[:0xC])
+    global calib_1, calib_2
+    cmd_id, pkt_idx, device_addr, type_maybe, data_len = struct.unpack("<BH6sHB", resp[:0xC])
     #hex_dump(resp)
-    print(hex(cmd_id), hex(pkt_idx), mac_str(device_addr), hex(unk3), "data_len:", hex(data_len))
+    print(hex(cmd_id), hex(pkt_idx), mac_str(device_addr), hex(type_maybe), "data_len:", hex(data_len))
+
+    if type_maybe == 0x101:
+        data = resp[0xC:0xC+data_len].decode("utf-8")
+        if data[0:1] == ACK_CALIB_1:
+            data_real = data[1:]
+            calib_1 += data_real
+            print("   Got CALIB_1:", calib_1)
+        elif data[0:1] == ACK_CALIB_2:
+            data_real = data[1:]
+            calib_2 += data_real
+            print("   Got CALIB_2:", calib_2)
+        elif data[0:1] == ACK_DEVICE_INFO:
+            data_real = data[1:]
+            print("   Got device info ACK:", data_real[:3], data_real[3:])
+        elif data[0:2] == ACK_LP:
+            data_real = data[2:]
+            print("   Got LP ACK:", data_real)
+        else:
+            print("   Got ACK:", data)
+        print("")
+        return
 
     data = resp[0xC:0xC+data_len]
     data_id = data[0]
     data_real = data[1:]
     #hex_dump(data)
-    print("data_id:", hex(data_id), "data:", data_real)
+    print("   data_id:", hex(data_id), "data:", data_real)
 
     '''
     for i in range(0, 7):
@@ -509,6 +636,57 @@ print(send_rf_command(0xFF, [0x00])) # QueryROMVersion
 print(send_rf_command(0xA4, [0x05, 0x0])) # RequestCap1
 print(send_rf_command(0xA4, [0x05, 0x1])) # RequestCap2
 
+#print(send_rf_command(0xEF, bytes([0x06]) + "800001FF".encode("utf-8"))) # Write PCB ID
+#print(send_rf_command(0xEF, bytes([0x07]) + "00059E00".encode("utf-8"))) # Write SKU ID
+#print(send_rf_command(0xEF, bytes([0x08]) + "43AD339B07725".encode("utf-8"))) # Write SN
+#print(send_rf_command(0xEF, bytes([0x09]) + "FA3983C06815".encode("utf-8"))) # Write Ship SN
+
+'''
+print("fuzz")
+default_ret =  bytes([1,2,3,5] + [0]*0x30)
+#default_ret =  bytes([0,0,0,0,0,0,0x2c])
+#default_ret =  bytes([0,0,0,0,0,3,0,0,0,0,0,0xFF,0xFF,0xFF,0xFF])
+#default_ret =  bytes([0,0,0,0,0,2,0,0,0,0,0])
+#default_ret =  bytes([0,0,0,0,0,1,0,0,0,0,0])
+for i in range(0, 0x100):
+    
+    if i in fuzz_blacklist: continue
+    for j in range(0, 0x100):
+        ret = send_rf_command(0xEF, [i,  j,1,2,3,5] + [0]*0x30) # test
+        if ret != default_ret:
+            print(hex(i), hex(j))
+            hex_dump(ret)
+        break
+        resp = device_hid1.read(0x400, timeout=1)
+        if len(resp) <= 0:
+            continue
+        print(hex(i), hex(j))
+        hex_dump(resp)
+print("done?")
+'''
+
+print("test2")
+#hex_dump(send_rf_command(0xFA, [0x02, 0x18]))
+
+# Notes from before my dongle bricked
+'''
+1 Run Prior
+hex_dump(send_rf_command_to_id(0, 0x21, [0/0x18?]))
+
+00 21 05 00 01 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+00 21 0c 01 00 
+02 50 05 00 00 00 00 01 
+02 50 05 00 00 00 00 01
+
+The dongle's dying words
+02 50 05 00 01 00 00 01 
+'''
+# hex_dump(send_rf_command(0x21, [0])) # bricked my dongle :(
+
+
 #print(send_rf_command_to_id(0, 0x28, struct.pack("<BBLHBB", 3, 0, 0x10000, 0, which, 0))) #SetHand
 #print(send_rf_command_to_id(0, 0x28, struct.pack("<BBHHH", 3, 0, nDutyCycle, nOnOff, 0))) #CarIrLed
 nFrequency = 1
@@ -521,22 +699,36 @@ nAmplitude = 3
 #print(send_rf_command_to_id(0, 0x28, struct.pack("<BBB", 3, 3))) #PowerOffCr standby=0
 #print(send_rf_command_to_id(0, 0x28, struct.pack("<BBB", 3, 6))) #PowerOffCr standby=1
 
+#print(send_rf_command_to_id(0, 0x1C, struct.pack("<BB", 0, 0))) # enters DFU mode
 
 # 0x1D = ReportRequestRFChangeBehavior?
 bEnabled = 1
 print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 0, bEnabled))) # PairDevice
 #print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 1, 1))) # RxPowerSaving
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 2, 0))) # RxPowerSaving
-
-
-#for i in range(0, 0x100):
-#send_rf_command_to_id(1, 0x1D, [4, 1]) # RfChangeBehavior resp?
-
-
-#send_rf_command_to_id(0, 0x21, []) # rf mode op?
-
+#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 1, val))) # RxPowerSaving
+#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 2, 0))) # RestartRf / hndl_restart_rx
+#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BBB", 3, 5, type))) # SetLpf (7,8,9,10)
+# what is 4?
+#print(send_rf_command_to_id(0, 0x1D, struct.pack("<B", 5))) # hndl_factory_reset
 
 #print(send_rf_command_to_id(0, 0xEB)) # reboots dongle
+
+'''
+for i in range(0, 0x20):
+    if i in fuzz_blacklist: continue
+    for j in range(0, 0x20):
+        print(hex(i))
+        hex_dump(send_rf_command(0xFF, [i,0])) # reboots dongle
+        break
+'''
+
+print("test?")
+#hex_dump(send_rf_command_to_id(0, 0x26, struct.pack("<HBBB", 0, 0, 0x22, 3) + "APF".encode("utf-8"))) # PairDevice
+#hex_dump(send_raw([0x22, 0x00, 0x0E, 0x4E, 0x41, 0x56, 0x31, 0x31, 0x2E, 0x30, 0x2E, 0x39, 0x39, 0x39, 0x2E, 0x38, 0x34]))
+#hex_dump(send_rf_command_to_id(0, 0x26, struct.pack("<HBBB", 0, 0, 0x22, 3) + "APF".encode("utf-8")))
+
+
+
 
 
 '''
@@ -552,10 +744,7 @@ for i in range(0, 256):
     print(send_rf_command_to_id(0, i, [0]))
 '''
 
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 1, val))) # RxPowerSaving
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 2, 0))) # RestartRf / hndl_restart_rx
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BBB", 3, 5, type))) # SetLpf (7,8,9,10)
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<B", 5))) # hndl_factory_reset
+
 
 #print(send_rf_command_to_id(0, 0xFA, [0x02, 0x6A, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0xC4])) # DisableCharging
 
@@ -665,26 +854,57 @@ while True:
         is_repair = data_ret[1] # 0x1, id?
         paired_mac = mac_str(data_ret[2:])
         print(f"Paired {paired_mac}")
+        calib_1 = ""
+        calib_2 = ""
     elif resp[0] == 0x1e or resp[0] == 0x1d or resp[0] == 0x29:
         print(f"dump for {hex(resp[0])}:")
-        hex_dump(resp)
+        #hex_dump(resp)
         cmd_ret, data_ret = parse_rf_incoming(resp)
-        hex_dump(data_ret)
+        if resp[0] == 0x1e or resp[0] == 0x1d:
+            parse_1d_1e(data_ret)
+        else:
+            hex_dump(data_ret)
     elif resp[0] == 0x28:
         parse_incoming(resp)
+        send_raw(bytes([0]) + resp)
+
+        #print(send_rf_command_to_id(0, 0, [0xEB,0,0])) # reboots dongle
+
+        #hex_dump(send_rf_command_to_id(0, 0x26, struct.pack("<HBBB", 0, 0, 0x22, 3) + "APF".encode("utf-8"))) # PairDevice
 
         #print(send_rf_command_to_id(0, 0x28, struct.pack("<BB", 0, 0))) # RxPowerSaving
         #print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 2, 0))) # RestartRf
         #print(send_rf_command_to_id(0, 0x28, struct.pack("<BB", 3, 3))) #PowerOffCr standby=0
-        #print(send_rf_command(0xFA, [0x02, 0x6A, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0xC4])) # DisableCharging
+        #print(send_rf_command(0x9C, struct.pack("<B", 0xC))) #RequestData
+        #print(send_rf_command(0x9D, struct.pack("<B", 0xC))) #RequestData
+
+        #print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 2, 0)))
+        
         #print(send_rf_command_to_id(0, 0x14, [])) #  read_battery_level
         #print(send_raw([0x02, 0x1A, 0x00]))
         #print(send_rf_command_to_id(0, 0x1E, []))
         #send_raw([0x02, 0x1D, 0x02, 0x1A, 0x00])
+        #send_raw([0x00, 0x28, 0xce, 0x00, 0x23, 0x30, 0x42, 0xb7, 0x82, 0xd3, 0x01, 0x01, 0x07, 0x4c, 0x50, 0x30, 0x2c, 0x31, 0x2c, 0x30])
 
+        #print(send_rf_command(0xFA, [0x02, 0x6A, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0xC4, 0x00])) # DisableCharging
         #print(send_rf_command_to_id(0, 0xFA, [0x02, 0x6A, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0xC4])) # DisableCharging
 
         #print(send_rf_command_to_id(0, 0x28, struct.pack("<BBHHHH", 3, 1, nFrequency, nDuration, nAmplitude, 0))) #RfHaptic
+        #print(send_rf_command_to_id(0, 0, struct.pack("<BBBHHHH", 0x28, 3, 1, nFrequency, nDuration, nAmplitude, 0))) #RfHaptic
+
+        '''
+        for i in range(0x20, 0xFF):
+            if i == 0xEB: continue
+            if i == 0x1C: continue
+            if i == 0x1D: continue
+            hex_dump(send_rf_command_to_id(0, i, struct.pack("<BB", 0, 3) + "APF".encode("utf-8")))
+        '''
+
+        #send_raw([0x0, 0x28, 0x60, 0x09, 0x23, 0x31, 0x42, 0xb7, 0x82, 0xd3, 0x10, 0x01, 0x02, 0x5a, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfb, 0x01])
+
+        #hex_dump(send_rf_command_to_id(0, 0x28, struct.pack("<BB3s", 0, 3, "APF".encode("utf-8"))))
+        #print(send_rf_command_to_id(0, 0x1C, struct.pack("<BB", 1, 3)))
+        
 
         for i in range(1, 256):
             #print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", i, bEnabled))) # PairDevice
@@ -696,24 +916,8 @@ while True:
         print("dump:")
         hex_dump(resp)
 
-    
-'''
-00 1d 1d 00 00 02 17 16 01 00 03 00 00 04 03 00 
-00 04 03 00 00 01 03 00 00 01 03 00 00 01 00 00 
-00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
-00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
 
-'''
-
-'''
-  uStack_79[1] = 0x1d;
-  uStack_79[2] = 6;
-  uStack_79[3] = 2;
-  uStack_79[4] = 0;
-  uStack_79[5] = uStack_79[6] ^ 1;
-  uStack_79[6] = (byte)param_1 & 1;
-'''
-
+# What USB-HID PCVR does internally, could be useful for BTLE?
 '''
               idk_pcvr_mode(0,0); // HORUS_CMD_POWER 0
               idk_pcvr_mode(0xb,0xffff); // HORUS_CMD_UPDATE_DEVICE_ID
@@ -725,4 +929,80 @@ while True:
                 uVar24 = 9;
               }
               idk_pcvr_mode(0,uVar24); // HORUS_CMD_POWER, 
+'''
+
+# Initial data sent post-pairing
+'''
+Paired 23:30:42:b7:82:d3
+0x28 0x0 23:30:42:b7:82:d3 0x101 data_len: 0x25
+data_id: 0x43 data: b'{"trackref_from_head":[-0.017001,0.0'
+0x28 0x1 23:30:42:b7:82:d3 0x101 data_len: 0x25
+data_id: 0x43 data: b'10084,0.015520,0.000000,1.000000,0.0'
+0x28 0x2 23:30:42:b7:82:d3 0x101 data_len: 0x25
+data_id: 0x43 data: b'00000,0.000000],"trackref_from_imu":'
+0x28 0x3 23:30:42:b7:82:d3 0x101 data_len: 0x25
+data_id: 0x43 data: b'[0.000000,0.000000,0.000000,0.000000'
+0x28 0x4 23:30:42:b7:82:d3 0x101 data_len: 0x1e
+data_id: 0x43 data: b',0.000000,0.000000,0.000000]}'
+0x28 0x5 23:30:42:b7:82:d3 0x101 data_len: 0x11
+data_id: 0x63 data: b'0,0,173,06DA2370'
+0x28 0x6 23:30:42:b7:82:d3 0x101 data_len: 0x7
+data_id: 0x4e data: b'ANAOT1'
+data_id: 0x4e data: b'ADSFA3B93B00048'
+data_id: 0x4e data: b'ASSFA3B93B00048'
+data_id: 0x4e data: b'ASI00059600'
+data_id: 0x4e data: b'API505001FF'
+data_id: 0x4e data: b'AV11.0.999.84'
+'''
+
+# Some tracker-side BT packets, these can be obtained easier
+# using
+# `adb shell setprop persist.horusd.debug "--irawlog --rrawlog --brawlog --crawlog"`
+# and then `adb logcat`
+# The tracker BTLE seems to be more direct than the dongle's; We only see dongle-like
+# replies after a layer of wrapping w/ the dongle CMD/len
+'''
+02-27 01:09:00.880   476   619 D HDbt    : bt_thread: [RECV-0x20] status=0
+02-27 01:09:00.880   476   619 D HDbt    : [bt_thread][ 90] RAW: 20 00 06 4F 54 42 B7 82 D3 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+
+[bt_thread][ 90] RAW: 2F 24 00 00 10 00 4B 00 00 00 2A 20 AC C1 68 02 C7 C6 F0 01 23 00 00 00 BB 13 00 00 12 00 00 00 00 00 00 00 11 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+RAW: 20 01 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+'''
+# ACK CMD is: 22 00 04 4E 41 5A 5A
+# data sent with 0x21, ex 21 00 02 00 72
+
+
+# From DFU:
+'''
+serial_number: DA045F027B7E
+    bootloaderType: NRFDL_BOOTLOADER_TYPE_SDFU
+    image:
+        imageLocation: {"address":958464,"size":81920}
+        imageType: NRFDL_IMAGE_TYPE_BOOTLOADER
+        version: 1
+        versionFormat: incremental
+    image:
+        imageLocation: {"address":4096,"size":159744}
+        imageType: NRFDL_IMAGE_TYPE_SOFTDEVICE
+        version: 7002000
+        versionFormat: incremental
+    image:
+        imageLocation: {"address":159744,"size":59584}
+        imageType: NRFDL_IMAGE_TYPE_APPLICATION
+        version: 1
+        versionFormat: incremental
+'''
+'''
+serial_number: DA045F027B7E
+    deviceFamily: NRF52
+    deviceVersion: NRF52840_AAD0
+    ramSize: 262144
+    romPageSize: 4096
+    romSize: 1048576
+'''
+
+# Some 0x17 packets
+'''
+02 17 16 01 00 03 00 00 04 05 00 00 0a 03 00 00 01 03 00 00 01 03 00 00 01
+02 17 16 01 00 05 00 00 0a 03 00 00 04 03 00 00 01 03 00 00 01 03 00 00 01
 '''
