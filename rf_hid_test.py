@@ -283,20 +283,20 @@ DONGLE_CMD_26 = 0x26 # -> Echoes back the USB buffer, 0x40 bytes
 DONGLE_CMD_27 = 0x27 # -> RF_REPORT_RF_IDS, "Proprietary" in string. Checks if data is [7] and size is < 4, but does nothing with it.
 DONGLE_CMD_28 = 0x28 # -> , takes [6/7/8/9, ...]
 
-DONGLE_CMD_98 = 0x98 # -> accepts 5 bytes: <BL, second arg must not be > 0x14000, first arg must not be 1 or 2
-DONGLE_CMD_99 = 0x99 # -> transmits maybe? does a crc32. data length must not exceed 0x3c
-#DONGLE_CMD_9A = 0x9A # -> ?? might not be real
+DONGLE_CMD_98 = 0x98 # -> flashing related! accepts 5 bytes: <BL, second arg must not be > 0x14000, first arg must not be 1 or 2
+DONGLE_CMD_99 = 0x99 # -> flashing related! does a crc32. data length must not exceed 0x3c
+DONGLE_CMD_9A = 0x9A # -> flashing related! accepts <BBBBBL, last u32 is the crc32 of the data. finalizes flashing?
 
 #DONGLE_CMD_9C = 0x9C # -> "RequestData"? might not be real
 #DONGLE_CMD_9D = 0x9D # -> "RequestData"? might not be real
-DONGLE_CMD_9E = 0x9E # -> ??
-DONGLE_CMD_9F = 0x9F # -> ?? always returns 0x10 00s
+DONGLE_CMD_9E = 0x9E # -> accepts 1 byte.
+DONGLE_CMD_9F = 0x9F # -> always returns 0x10 00s if data[0] is not 0x2, otherwise, resets into cmd98..cmd9A data? maybe?
 DONGLE_CMD_EB = 0xEB # -> Reboot
 # 0xEC, 0xED, 0xEE
 DONGLE_CMD_EF = 0xEF # -> writes to ID stuff, accepts a byte idx and data. data must not exceed 0x3d
 DONGLE_CMD_F0 = 0xF0 # -> a lot of ID stuff
 DONGLE_CMD_F3 = 0xF3 # -> wrapper for cmd 0x1D?
-DONGLE_CMD_F4 = 0xF4 # -> switches command based on 
+DONGLE_CMD_F4 = 0xF4 # -> accepts <BBBBBBB, a checksum, 5 bytes (presumably trackers), and a subcmd minimum
 #DONGLE_CMD_FA = 0xFA # -> used in DisableCharging? might not be real
 DONGLE_CMD_FF = 0xFF # -> ROM version, does not check input
 
@@ -327,7 +327,7 @@ DONGLE_CMD_28_SUBCMD_8 = 0x08 # -> takes 5 bytes, one per tracker presumably, as
 DONGLE_CMD_28_SUBCMD_9 = 0x09 # -> takes 5 bytes, one per tracker presumably
 
 DONGLE_CMD_F4_SUBCMD_0 = 0x00 # -> 00 00 00 00 00 00 2c hex_dump(send_rf_command(0xF4, [0,0,0,0,0,0,0])) -> 01 03 03 03 03 00 2c hex_dump(send_rf_command(0xF4, [1,  1,1,1,1,1,0])) tracker related
-DONGLE_CMD_F4_SUBCMD_1 = 0x01 
+DONGLE_CMD_F4_SUBCMD_1 = 0x01 # also accepts <BL
 DONGLE_CMD_F4_SUBCMD_2 = 0x02
 DONGLE_CMD_F4_SUBCMD_3 = 0x03
 
@@ -445,6 +445,22 @@ def send_raw(data=None, pad=True):
         return bytes([])
 
     return bytes([])
+
+def do_checksum(data):
+    out = 0
+    for i in range(0, len(data)):
+        out ^= data[i]
+    return out
+
+def send_F4(trackers, subcmd, data=None):
+    if data is None:
+        data = []
+    if len(trackers) != 5:
+        return bytes([])
+    checksummed_data = bytes(trackers) + bytes([subcmd]) + bytes(data)
+    out_data = bytes([do_checksum(checksummed_data)]) + checksummed_data
+    hex_dump(out_data)
+    return send_rf_command(DONGLE_CMD_F4, out_data)
 
 def send_rf_command(cmd_id, data=None):
     if data is None:
@@ -732,13 +748,13 @@ nAmplitude = 3
 
 # 0x1D = ReportRequestRFChangeBehavior?
 bEnabled = 1
-print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 0, bEnabled))) # PairDevice
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 1, 1))) # RxPowerSaving
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 1, val))) # RxPowerSaving
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BB", 2, 0))) # RestartRf / hndl_restart_rx
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<BBB", 3, 5, type))) # SetLpf (7,8,9,10)
+print(send_rf_command(0x1D, struct.pack("<BBBBBBB", 0, bEnabled, 1, 0, 0, 0, 0))) # PairDevice
+#print(send_rf_command(0x1D, struct.pack("<BBBBBBB", 1, bEnabled, 1, 0, 0, 0, 0))) # RxPowerSaving?
+#print(send_rf_command(0x1D, struct.pack("<BBBBBB", 2, 1, 0, 0, 0, 0))) # Same as 1 w/ bEnabled
+# 3 = SetLpf (7,8,9,10), not available
 # what is 4?
-#print(send_rf_command_to_id(0, 0x1D, struct.pack("<B", 5))) # hndl_factory_reset
+#print(send_rf_command(0x1D, struct.pack("<B", 5))) # FactoryReset?
+#print(send_rf_command(0x1D, struct.pack("<BBBBBB", 6, 1, 0, 0, 0, 0))) # ClearPairingInfo?
 
 #print(send_rf_command_to_id(0, 0xEB)) # reboots dongle
 
@@ -856,7 +872,7 @@ idx = 0
 while True:
     idx += 1
     if idx > 10 and got_a_pair and num_paired < 2:
-        send_rf_command_to_id(1, 0x1D, struct.pack("<BB", 0, bEnabled)) # PairDevice
+        send_rf_command(0x1D, struct.pack("<BBBBBBB", 0, bEnabled, 0, 1, 0, 0, 0)) # PairDevice
         idx = 0
 
     #print(send_rf_command_to_id(0, 0x28, struct.pack("<BBHHHH", 3, 1, nFrequency, nDuration, nAmplitude, 1))) #IdenfityController
@@ -897,7 +913,24 @@ while True:
         parse_incoming(resp)
         #send_raw(bytes([0]) + resp)
 
-        #print(send_rf_command(0x28, struct.pack("<BB", 0, 0))) # RxPowerSaving
+        #hex_dump(send_rf_command(DONGLE_CMD_28, struct.pack("<BBBBBBBB", DONGLE_CMD_28_SUBCMD_8, 1, 0, 0, 0, 0, 0x22, 0x3) + "APF".encode("utf-8")))
+        #hex_dump(send_rf_command(DONGLE_CMD_28, struct.pack("<BBBBBB", DONGLE_CMD_28_SUBCMD_9, 1, 0, 0, 0, 0)))
+
+        #hex_dump(send_rf_command(DONGLE_CMD_98, struct.pack("<BB", 0x22, 0x3) + "APF".encode("utf-8"))) 
+        #hex_dump(send_rf_command(DONGLE_CMD_99, struct.pack("<BB", 0x22, 0x3) + "APF".encode("utf-8"))) 
+
+        # These commands feel sketchy...
+        #hex_dump(send_F4([1,1,1,1,1], 0))
+        #hex_dump(send_F4([1,1,1,1,1], 1, struct.pack("<BL", 0, 0)))
+
+        # sends 26 02 01 F0 00 00 00 00 00 00 ?
+        # 26 02 00 EC 00 00 00 00 00 00 00 00 0
+        #mac = [0x23, 0x31, 0x42, 0xb7, 0x82, 0xd3]
+        mac = [0x23, 0x30, 0x42, 0xb7, 0x82, 0xd3]
+        #hex_dump(send_rf_command(DONGLE_CMD_18, struct.pack("<BBBBBBBBBB",4, mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],0, 1,0x3) + "APF".encode("utf-8"))) # only checks first 2 bytes of mac
+        hex_dump(send_rf_command(DONGLE_CMD_18, struct.pack("<BBBBBBBBBB",3, mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],0, 1,0x3) + "APF".encode("utf-8"))) # checks all bytes of mac
+
+        #hex_dump(send_rf_command(DONGLE_CMD_18, struct.pack("<BBBBBB",5,5,0x42,0x42,0x42,0x42)))
 
         #print(send_rf_command_to_id(0, 0, [0xEB,0,0])) # reboots dongle
 
