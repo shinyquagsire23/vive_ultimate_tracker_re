@@ -300,13 +300,20 @@ DONGLE_CMD_F4 = 0xF4 # -> switches command based on
 #DONGLE_CMD_FA = 0xFA # -> used in DisableCharging? might not be real
 DONGLE_CMD_FF = 0xFF # -> ROM version, does not check input
 
+DONGLE_CMD_18_SUBCMD_0 = 0x00 # returns const
+DONGLE_CMD_18_SUBCMD_1 = 0x01 # returns const
+DONGLE_CMD_18_SUBCMD_2 = 0x02 # returns const
+DONGLE_CMD_18_SUBCMD_3 = 0x03 # data len must be <=0x2C data[8] must be 10, data[9] must be < 0x10
+DONGLE_CMD_18_SUBCMD_4 = 0x04
+DONGLE_CMD_18_SUBCMD_5 = 0x05
+
 DONGLE_CMD_21_SUBCMD_0 = 0x00 # BRICKED MY DONGLE :(
 DONGLE_CMD_21_SUBCMD_1 = 0x01 # would have unbricked my dongle if I could actually send USB commands
-DONGLE_CMD_21_SUBCMD_2 = 0x02
-DONGLE_CMD_21_SUBCMD_5 = 0x05
-DONGLE_CMD_21_SUBCMD_6 = 0x06
-DONGLE_CMD_21_SUBCMD_7 = 0x07
-DONGLE_CMD_21_SUBCMD_8 = 0x08
+DONGLE_CMD_21_SUBCMD_2 = 0x02 # flashes some different byte?
+DONGLE_CMD_21_SUBCMD_5 = 0x05 # flashes some different byte?
+DONGLE_CMD_21_SUBCMD_6 = 0x06 # flashes some different byte?
+DONGLE_CMD_21_SUBCMD_7 = 0x07 # restarts?
+DONGLE_CMD_21_SUBCMD_8 = 0x08 # restarts?
 
 DONGLE_CMD_1D_SUBCMD_0 = 0x00 # pair
 DONGLE_CMD_1D_SUBCMD_1 = 0x01 # RxPowerSaving
@@ -314,7 +321,7 @@ DONGLE_CMD_1D_SUBCMD_2 = 0x02 # RestartRf
 DONGLE_CMD_1D_SUBCMD_5 = 0x05 # Factory Reset
 DONGLE_CMD_1D_SUBCMD_6 = 0x06 # ? clears pairing info maybe
 
-DONGLE_CMD_28_SUBCMD_6 = 0x06 # -> accepts 1 byte
+DONGLE_CMD_28_SUBCMD_6 = 0x06 # -> accepts 1 byte, might restart?
 DONGLE_CMD_28_SUBCMD_7 = 0x07 # -> returns some bytes from RAM, does the same weird check as 0x27
 DONGLE_CMD_28_SUBCMD_8 = 0x08 # -> takes 5 bytes, one per tracker presumably, as well as some extra bytes?
 DONGLE_CMD_28_SUBCMD_9 = 0x09 # -> takes 5 bytes, one per tracker presumably
@@ -888,7 +895,9 @@ while True:
             hex_dump(data_ret)
     elif resp[0] == 0x28:
         parse_incoming(resp)
-        send_raw(bytes([0]) + resp)
+        #send_raw(bytes([0]) + resp)
+
+        #print(send_rf_command(0x28, struct.pack("<BB", 0, 0))) # RxPowerSaving
 
         #print(send_rf_command_to_id(0, 0, [0xEB,0,0])) # reboots dongle
 
