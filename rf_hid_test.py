@@ -271,36 +271,58 @@ AKC_NA = "NA" # resends device info?
 
 
 DONGLE_CMD_18 = 0x18 #  -> RF_REPORT_RF_VERSION, [0]->[0,0,0], [1]->[0,0], [2]->[2,0,0,0,...], [3]->[3], [4]->[4]
-DONGLE_CMD_1A = 0x1A # -> GetFusionMode, GetRoleId?
+#DONGLE_CMD_1A = 0x1A # -> GetFusionMode, GetRoleId? might not be real.
 # 0x1B
-DONGLE_CMD_1C = 0x1C # -> Enters DFU bootloader?
-DONGLE_CMD_1D = 0x1D # -> RF_REPORT_CHANGE_BEHAVIOR
-DONGLE_CMD_1E = 0x1E # -> gets RF_REPORT_CHANGE_BEHAVIOR w/o changing anything
+DONGLE_CMD_1C = 0x1C # -> Enters DFU bootloader? accepts 2 bytes, first byte is seemingly not used, second must be 2 or 3?
+DONGLE_CMD_1D = 0x1D # -> RF_REPORT_CHANGE_BEHAVIOR. Crafts some pkt if given >2 bytes (sent to specific device). First byte must be <7, !=3, !=4, second byte must be 0 or 1
+DONGLE_CMD_1E = 0x1E # -> gets RF_REPORT_CHANGE_BEHAVIOR w/o changing anything, checks if length is 2?
 # 0x1F, 0x20
-DONGLE_CMD_21 = 0x21 # -> RF_REPORT_RF_MODE_OP? BRICKED MY DONGLE :(
+DONGLE_CMD_21 = 0x21 # -> RF_REPORT_RF_MODE_OP? BRICKED MY DONGLE :( Accepts only 1 byte
 # 0x22, 0x23, 0x24, 0x25
-DONGLE_CMD_26 = 0x26 # -> ??, echos back data after first 2 bytes? size 0x40 tho
-DONGLE_CMD_27 = 0x27 # -> RF_REPORT_RF_IDS, "Proprietary" in string
+DONGLE_CMD_26 = 0x26 # -> Echoes back the USB buffer, 0x40 bytes
+DONGLE_CMD_27 = 0x27 # -> RF_REPORT_RF_IDS, "Proprietary" in string. Checks if data is [7] and size is < 4, but does nothing with it.
+DONGLE_CMD_28 = 0x28 # -> , takes [6/7/8/9, ...]
 
-DONGLE_CMD_98 = 0x98 # -> ??
-DONGLE_CMD_99 = 0x99 # -> ??
-DONGLE_CMD_9A = 0x9A # -> ??
-DONGLE_CMD_9C = 0x9C # -> "RequestData"?
-DONGLE_CMD_9D = 0x9D # -> "RequestData"?
+DONGLE_CMD_98 = 0x98 # -> accepts 5 bytes: <BL, second arg must not be > 0x14000, first arg must not be 1 or 2
+DONGLE_CMD_99 = 0x99 # -> transmits maybe? does a crc32. data length must not exceed 0x3c
+#DONGLE_CMD_9A = 0x9A # -> ?? might not be real
+
+#DONGLE_CMD_9C = 0x9C # -> "RequestData"? might not be real
+#DONGLE_CMD_9D = 0x9D # -> "RequestData"? might not be real
 DONGLE_CMD_9E = 0x9E # -> ??
 DONGLE_CMD_9F = 0x9F # -> ?? always returns 0x10 00s
 DONGLE_CMD_EB = 0xEB # -> Reboot
 # 0xEC, 0xED, 0xEE
-DONGLE_CMD_EF = 0xEF # -> writes to ID stuff
+DONGLE_CMD_EF = 0xEF # -> writes to ID stuff, accepts a byte idx and data. data must not exceed 0x3d
 DONGLE_CMD_F0 = 0xF0 # -> a lot of ID stuff
-# 0xF1, 0xF2
-DONGLE_CMD_F3 = 0xF3 # -> ?
-DONGLE_CMD_F4 = 0xF4 # -> 00 00 00 00 00 00 2c hex_dump(send_rf_command(0xF4, [0,0,0,0,0,0])) ? 01 03 03 03 03 00 2c hex_dump(send_rf_command(0xF4, [1,  1,1,1,1,1])) ?
-DONGLE_CMD_F5 = 0xF5 # -> echos back data after first 2 bytes?
-DONGLE_CMD_F5 = 0xF6 # -> ?
-# 0xF7, 0xF8, 0xF9
-DONGLE_CMD_FA = 0xFA # -> used in DisableCharging?
-DONGLE_CMD_FF = 0xFF # -> ROM version
+DONGLE_CMD_F3 = 0xF3 # -> wrapper for cmd 0x1D?
+DONGLE_CMD_F4 = 0xF4 # -> switches command based on 
+#DONGLE_CMD_FA = 0xFA # -> used in DisableCharging? might not be real
+DONGLE_CMD_FF = 0xFF # -> ROM version, does not check input
+
+DONGLE_CMD_21_SUBCMD_0 = 0x00 # BRICKED MY DONGLE :(
+DONGLE_CMD_21_SUBCMD_1 = 0x01 # would have unbricked my dongle if I could actually send USB commands
+DONGLE_CMD_21_SUBCMD_2 = 0x02
+DONGLE_CMD_21_SUBCMD_5 = 0x05
+DONGLE_CMD_21_SUBCMD_6 = 0x06
+DONGLE_CMD_21_SUBCMD_7 = 0x07
+DONGLE_CMD_21_SUBCMD_8 = 0x08
+
+DONGLE_CMD_1D_SUBCMD_0 = 0x00 # pair
+DONGLE_CMD_1D_SUBCMD_1 = 0x01 # RxPowerSaving
+DONGLE_CMD_1D_SUBCMD_2 = 0x02 # RestartRf
+DONGLE_CMD_1D_SUBCMD_5 = 0x05 # Factory Reset
+DONGLE_CMD_1D_SUBCMD_6 = 0x06 # ? clears pairing info maybe
+
+DONGLE_CMD_28_SUBCMD_6 = 0x06 # -> accepts 1 byte
+DONGLE_CMD_28_SUBCMD_7 = 0x07 # -> returns some bytes from RAM, does the same weird check as 0x27
+DONGLE_CMD_28_SUBCMD_8 = 0x08 # -> takes 5 bytes, one per tracker presumably, as well as some extra bytes?
+DONGLE_CMD_28_SUBCMD_9 = 0x09 # -> takes 5 bytes, one per tracker presumably
+
+DONGLE_CMD_F4_SUBCMD_0 = 0x00 # -> 00 00 00 00 00 00 2c hex_dump(send_rf_command(0xF4, [0,0,0,0,0,0,0])) -> 01 03 03 03 03 00 2c hex_dump(send_rf_command(0xF4, [1,  1,1,1,1,1,0])) tracker related
+DONGLE_CMD_F4_SUBCMD_1 = 0x01 
+DONGLE_CMD_F4_SUBCMD_2 = 0x02
+DONGLE_CMD_F4_SUBCMD_3 = 0x03
 
 fuzz_blacklist = [DONGLE_CMD_1C, DONGLE_CMD_21, DONGLE_CMD_EB, DONGLE_CMD_EF]
 
