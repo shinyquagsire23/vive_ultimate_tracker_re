@@ -215,6 +215,15 @@ ERR_BUSY = 0x2
 ERR_03 = 0x3
 ERR_UNSUPPORTED = 0xEE
 
+# 0xfa80832 - connected?
+# 0xfa80804 - connected?
+# 0xfc00804 - connected?
+# 0x304 = disconnected, pairing info present
+# 0x301 = connected once, disconnected?
+# 0x1 = never connected
+PAIRSTATE_1 = 0x0001
+PAIRSTATE_2 = 0x0002
+
 #
 # ACK CMDs
 #
@@ -748,7 +757,7 @@ nAmplitude = 3
 
 # 0x1D = ReportRequestRFChangeBehavior?
 bEnabled = 1
-print(send_rf_command(0x1D, struct.pack("<BBBBBBB", 0, bEnabled, 1, 0, 0, 0, 0))) # PairDevice
+print(send_rf_command(0x1D, struct.pack("<BBBBBBB", 0, bEnabled, 1, 1, 1, 0, 0))) # PairDevice
 #print(send_rf_command(0x1D, struct.pack("<BBBBBBB", 1, bEnabled, 1, 0, 0, 0, 0))) # RxPowerSaving?
 #print(send_rf_command(0x1D, struct.pack("<BBBBBB", 2, 1, 0, 0, 0, 0))) # Same as 1 w/ bEnabled
 # 3 = SetLpf (7,8,9,10), not available
@@ -866,14 +875,15 @@ for i in range(0, 0x100):
 
 # CMD 0x1D crashes the dongle?
 
+device_macs = []
 got_a_pair = False
 num_paired = 0
 idx = 0
 while True:
-    idx += 1
-    if idx > 10 and got_a_pair and num_paired < 2:
-        send_rf_command(0x1D, struct.pack("<BBBBBBB", 0, bEnabled, 0, 1, 0, 0, 0)) # PairDevice
-        idx = 0
+    #idx += 1
+    #if idx > 10 and got_a_pair and num_paired < 2:
+    #    send_rf_command(0x1D, struct.pack("<BBBBBBB", 0, bEnabled, 0, 1, 0, 0, 0)) # PairDevice
+    #    idx = 0
 
     #print(send_rf_command_to_id(0, 0x28, struct.pack("<BBHHHH", 3, 1, nFrequency, nDuration, nAmplitude, 1))) #IdenfityController
     #print(send_rf_command_to_id(1, 0x28, struct.pack("<BBHHHH", 3, 1, nFrequency, nDuration, nAmplitude, 1))) #IdenfityController
@@ -898,7 +908,10 @@ while True:
         unk = data_ret[0]
         is_repair = data_ret[1] # 0x1, id?
         paired_mac = mac_str(data_ret[2:])
-        print(f"Paired {paired_mac}")
+        if [data_ret[2:]] not in device_macs:
+            device_macs += [data_ret[2:]]
+        print(f"Paired {paired_mac}, {hex(unk)}, {hex(is_repair)}")
+        print(device_macs)
         calib_1 = ""
         calib_2 = ""
     elif resp[0] == 0x1e or resp[0] == 0x1d or resp[0] == 0x29:
@@ -926,9 +939,10 @@ while True:
         # sends 26 02 01 F0 00 00 00 00 00 00 ?
         # 26 02 00 EC 00 00 00 00 00 00 00 00 0
         #mac = [0x23, 0x31, 0x42, 0xb7, 0x82, 0xd3]
-        mac = [0x23, 0x30, 0x42, 0xb7, 0x82, 0xd3]
-        #hex_dump(send_rf_command(DONGLE_CMD_18, struct.pack("<BBBBBBBBBB",4, mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],0, 1,0x3) + "APF".encode("utf-8"))) # only checks first 2 bytes of mac
-        hex_dump(send_rf_command(DONGLE_CMD_18, struct.pack("<BBBBBBBBBB",3, mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],0, 1,0x3) + "APF".encode("utf-8"))) # checks all bytes of mac
+        #mac = [0x23, 0x30, 0x42, 0xb7, 0x82, 0xd3]
+        #for mac in device_macs:
+        #    #hex_dump(send_rf_command(DONGLE_CMD_18, struct.pack("<BBBBBBBBBB",4, mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],0, 1,0x3) + "APF".encode("utf-8"))) # only checks first 2 bytes of mac
+        #    hex_dump(send_rf_command(DONGLE_CMD_18, struct.pack("<BBBBBBBBBB",3, mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],0, 1,0x3) + "APS".encode("utf-8"))) # checks all bytes of mac
 
         #hex_dump(send_rf_command(DONGLE_CMD_18, struct.pack("<BBBBBB",5,5,0x42,0x42,0x42,0x42)))
 
@@ -983,9 +997,9 @@ while True:
 
 # What USB-HID PCVR does internally, could be useful for BTLE?
 '''
-              idk_pcvr_mode(0,0); // HORUS_CMD_POWER 0
-              idk_pcvr_mode(0xb,0xffff); // HORUS_CMD_UPDATE_DEVICE_ID
-              idk_pcvr_mode(0xc,bVar9); // HORUS_CMD_SET_TRACKING_MODE
+              send_horus_cmd(0,0); // HORUS_CMD_POWER 0
+              send_horus_cmd(0xb,0xffff); // HORUS_CMD_UPDATE_DEVICE_ID
+              send_horus_cmd(0xc,bVar9); // HORUS_CMD_SET_TRACKING_MODE
               if (command_ == 0xa101) { // ocvr
                 uVar24 = 8;
               }
