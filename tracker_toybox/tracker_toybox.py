@@ -1,6 +1,7 @@
 import hid
 import struct
 import numpy as np
+import time
 
 from enums_usb import *
 from enums_horusd_hid import *
@@ -14,13 +15,20 @@ from enums_horusd_dongle import *
 # GLOBALS
 calib_1 = ""
 calib_2 = ""
+device_macs = []
+got_a_pair = False
+num_paired = 0
+device_hid1 = None
+switch_tracking_once = True
+map_once = True
+poses_recvd = 0
 
-device_list = hid.enumerate(VID_VIVE, PID_DONGLE)
-print(device_list)
+pose_quat = [0.0, 0.0, 0.0, 1.0]
+pose_pos = [0.0, 0.0, 0.0]
+pose_time = 0
 
-#Find the device with the particular usage you want
-device_dict_hid1 = [device for device in device_list if device['interface_number'] == HID1_INTERFACE_NUM][0]
-device_hid1 = hid.Device(path=device_dict_hid1['path'])
+def current_milli_time():
+    return round(time.time() * 1000)
 
 def hex_dump(b, prefix=""):
     p = prefix
@@ -68,6 +76,7 @@ def dongle_parse_tracker_status(data):
 
 
 def dongle_send_raw(data=None, pad=True):
+    global device_hid1
     if data is None:
         data = []
     out = bytes(data)
@@ -90,6 +99,7 @@ def dongle_send_raw(data=None, pad=True):
     return bytes([])
 
 def dongle_send_cmd(cmd_id, data=None):
+    global device_hid1
     if data is None:
         data = []
     if type(data) is str:
@@ -129,16 +139,39 @@ def dongle_send_F4(trackers, subcmd, data=None):
     return dongle_send_cmd(DCMD_F4, out_data)
 
 def parse_pose_data(data):
+    global map_once, poses_recvd, switch_tracking_once, pose_pos, pose_quat, pose_time
+    poses_recvd += 1
+
     if len(data) != 0x25:
         print("Weird pose data.")
         hex_dump(data)
+        if switch_tracking_once and poses_recvd > 10:
+            #dongle_send_ack_to_all(ACK_TRACKING_MODE + "1")
+            switch_tracking_once = False
         return
-    idx, unk0, unk1, unk2, unk3, moves, pos, unk8, unk10 = struct.unpack("<BBLLL8s6s8sB", data)
+    idx, unk0, pos, rot, acc, unk8, unk10 = struct.unpack("<BB12s8s6s8sB", data)
     
-    moves_arr = np.frombuffer(moves, dtype=np.float16, count=4)
-    pos_arr = np.frombuffer(pos, dtype=np.float16, count=3)
+    pos_arr = np.frombuffer(pos, dtype=np.float32, count=3)
+    rot_arr = np.frombuffer(rot, dtype=np.float16, count=4)
+    acc_arr = np.frombuffer(acc, dtype=np.float16, count=3)
     unk8_arr = np.frombuffer(unk8, dtype=np.float16, count=4)
-    print(hex(idx), unk0, unk1, unk2, unk3, "moves:", moves_arr, "pos?:", pos_arr, "unk?:", unk8_arr, unk10)
+    print(hex(idx), hex(unk0), "pos:", pos_arr, "rot:", rot_arr, "acc?:", acc_arr, "unk?:", unk8_arr, unk10, "time_delta", current_milli_time() - pose_time)
+
+    pose_quat = rot_arr
+    pose_pos = pos_arr
+    pose_time = current_milli_time()
+
+    if map_once and poses_recvd > 1000:
+        dongle_send_ack_to_all(ACK_END_MAP)
+        map_once = False
+
+def dongle_get_pos():
+    global pose_pos
+    return np.array(pose_pos)
+
+def dongle_get_rot():
+    global pose_quat
+    return np.array(pose_quat)
 
 def dongle_parse_tracker_incoming(resp):
     global calib_1, calib_2
@@ -166,6 +199,10 @@ def dongle_parse_tracker_incoming(resp):
         elif data[0:4] == ACK_ERROR_CODE:
             data_real = data[4:]
             print("   Got ERROR:", data_real)
+        elif data[0:2] == ACK_MAP_STATUS:
+            data_real = data[2:]
+            print("   Got MAP_STATUS:", data_real)
+            #dongle_send_ack_to_all(ACK_END_MAP)
         else:
             print("   Got ACK:", data, "(", data_raw, ")")
         print("")
@@ -239,14 +276,20 @@ print(dongle_send_cmd(DCMD_REQUEST_RF_CHANGE_BEHAVIOR, struct.pack("<BBBBBBB", R
 #print(dongle_send_cmd(DCMD_REQUEST_RF_CHANGE_BEHAVIOR, struct.pack("<B", RF_BEHAVIOR_FACTORY_RESET))) # FactoryReset?
 #print(dongle_send_cmd(DCMD_REQUEST_RF_CHANGE_BEHAVIOR, struct.pack("<BBBBBB", RF_BEHAVIOR_6, 1, 0, 0, 0, 0))) # ClearPairingInfo?
 
-device_macs = []
-got_a_pair = False
-num_paired = 0
-idx = 0
-while True:
+def do_usb_init():
+    global device_hid1
+    device_list = hid.enumerate(VID_VIVE, PID_DONGLE)
+    print(device_list)
+
+    #Find the device with the particular usage you want
+    device_dict_hid1 = [device for device in device_list if device['interface_number'] == HID1_INTERFACE_NUM][0]
+    device_hid1 = hid.Device(path=device_dict_hid1['path'])
+
+def do_loop():
+    global device_hid1, num_paired, device_macs, got_a_pair
     resp = device_hid1.read(0x400)
     if len(resp) <= 0:
-        continue
+        return
     #print("dump:")
     #hex_dump(resp)
     #print("parsed:")
@@ -269,7 +312,11 @@ while True:
         calib_2 = ""
 
         dongle_send_ack_to_all(ACK_TRACKING_MODE + "-1")
-        dongle_send_ack_to_all(ACK_TRACKING_MODE + "1")
+        dongle_send_ack_to_all(ACK_TRACKING_MODE + "22")
+        #dongle_send_ack_to_all(ACK_TRACKING_HOST + "-1")
+        #dongle_send_ack_to_all(ACK_ROLE_ID + "1")
+        #dongle_send_ack_to_all(ACK_NEW_ID + "0")
+        #dongle_send_ack_to_all(ACK_GET_INFO + "3,1")
     elif resp[0] == DRESP_TRACKER_RF_STATUS or resp[0] == DRESP_TRACKER_NEW_RF_STATUS or resp[0] == 0x29:
         print(f"dump for {hex(resp[0])}:")
         #hex_dump(resp)
@@ -298,6 +345,12 @@ while True:
     else:
         print("dump:")
         hex_dump(resp)
+
+if __name__ == '__main__':
+    do_usb_init()
+
+    while True:
+        do_loop()
 
 
 # What USB-HID PCVR does internally, could be useful for BTLE?

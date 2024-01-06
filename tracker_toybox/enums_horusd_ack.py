@@ -32,7 +32,7 @@ ACK_TIME_SET = "ATS" # SetUserTime, calls clock_settime in seconds
 ACK_ROLE_ID = "ARI"
 ACK_GET_INFO = "AGI" # complicated for some reason, takes a list of ints, fusionmode related
 ACK_END_MAP = "ALE"
-ACK_NEW_ID = "ANI" # sets DeviceID
+ACK_NEW_ID = "ANI" # sets DeviceID, WiFi related?
 
 ACK_POWER_OFF_CLEAR_PAIRING_LIST = "APC"
 ACK_POWER_OFF = "APF"
@@ -52,7 +52,8 @@ ACK_FW = "FW" # TODO
 ACK_FILE_DOWNLOAD = "FD"
 
 ACK_ERROR_CODE = "DEC" # DEC?
-AKC_NA = "NA" # resends device info?
+ACK_NA = "NA" # resends device info?
+ACK_MAP_STATUS = "MS"
 
 ERROR_NO_CAMERA = 1100
 ERROR_CAMERA_SSR_1 = 1121

@@ -41,3 +41,10 @@ HDCC_HID_CONNECTED = 0xD
 HDCC_E = 0xE # related to ROLE_ID? Sent on pairing.
 HDCC_WIFI_ONLY_MODE = 0xF
 HDCC_10 = 0x10 # pose related
+
+TRACKING_MODE_NONE = -1
+TRACKING_MODE_1 = 1 # gyro only?
+TRACKING_MODE_2 = 2 # body?
+TRACKING_MODE_11 = 11 # gyro only?
+TRACKING_MODE_21 = 21 # body tracking? persist.lambda.3rdhost
+TRACKING_MODE_22 = 21 # body tracking?
