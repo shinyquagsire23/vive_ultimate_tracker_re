@@ -17,14 +17,12 @@ ERR_BUSY = 0x2
 ERR_03 = 0x3
 ERR_UNSUPPORTED = 0xEE
 
-# 0xfa80832 - connected standby?
-# 0xfa80804 - connected standby?
-# 0xfc00804 - connected standby?
-# 0x304 = disconnected, pairing info present
-# 0x301 = connected once, disconnected?
-# 0x1 = never connected
+
 PAIRSTATE_1 = 0x0001
 PAIRSTATE_2 = 0x0002
+PAIRSTATE_4 = 0x0004
+PAIR_STATE_PAIRED = 0x0008
+PAIRSTATE_10 = 0x0010
 
 # SetStatus/GetStatus
 HDCC_BATTERY = 0x0
@@ -42,9 +40,30 @@ HDCC_E = 0xE # related to ROLE_ID? Sent on pairing.
 HDCC_WIFI_ONLY_MODE = 0xF
 HDCC_10 = 0x10 # pose related
 
-TRACKING_MODE_NONE = -1
-TRACKING_MODE_1 = 1 # gyro only?
+TRACKING_MODE_NONE = -1 # checks persist.lambda.3rdhost
+TRACKING_MODE_1 = 1 # gyro only? persist.lambda.3rdhost=0, persist.lambda.normalmode=1 persist.lambda.trans_setup=0
 TRACKING_MODE_2 = 2 # body?
-TRACKING_MODE_11 = 11 # gyro only?
+TRACKING_MODE_SLAM_CLIENT = 11 # gyro only? persist.lambda.3rdhost=0, persist.lambda.normalmode=0 # client?
 TRACKING_MODE_21 = 21 # body tracking? persist.lambda.3rdhost
-TRACKING_MODE_22 = 21 # body tracking?
+TRACKING_MODE_SLAM_HOST = 22 # SLAM persist.lambda.3rdhost=1, persist.lambda.normalmode=0
+TRACKING_MODE_51 = 51 # SetUVCStatus?
+
+# GET_STATUS
+KEY_TRANSMISSION_READY = 0
+KEY_RECEIVED_FIRST_FILE = 1
+KEY_RECEIVED_HOST_ED = 2
+KEY_RECEIVED_HOST_MAP = 3
+KEY_CURRENT_MAP_ID = 4
+KEY_MAP_STATE = 5
+KEY_CURRENT_TRACKING_STATE = 6
+
+_slam_key_strs = ["TRANSMISSION_READY", "RECEIVED_FIRST_FILE", "RECEIVED_HOST_ED", "RECEIVED_HOST_MAP", "CURRENT_MAP_ID", "MAP_STATE", "CURRENT_TRACKING_STATE"]
+
+def slam_key_to_str(idx):
+    return _slam_key_strs[idx]
+
+# Commands
+ASK_ED = 0
+ASK_MAP = 1
+KF_SYNC = 2
+RESET_MAP = 3
