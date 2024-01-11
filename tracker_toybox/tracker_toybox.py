@@ -19,8 +19,14 @@ from enums_horusd_dongle import *
 # adb shell setprop persist.lambda.3rdhost 1 
 # tracking_mode 1 seems to fuck up trans_setup?
 
+# client trackers sometimes need:
+# adb shell rm -rf /data/lambda/ 
+# adb shell mkdir -p /data/lambda/
+
 # adb shell cat /data/tracking_log/horusd.log.0
 # adb shell cat /data/tracking_log/slam.log.1
+# adb shell cat /data/tracking_log/slam.log.\* > test_slam_client.log 
+# adb shell cat /data/tracking_log/slam.log.\* > test_slam_host.log 
 
 # Doesn't work :(
 # cp /data/property/persist.lambda.3rdhost /data/property/persist.tracking.mode.largescale
@@ -75,6 +81,7 @@ class DongleHID:
         self.pose_time = [0] * 5
         self.pair_state = [0,0,0,0,0]
         self.bump_map_once = [True]*5
+        self.bump_map_once_2 = [True]*5
 
         self.host_ssid = ""
         self.host_passwd = ""
@@ -227,7 +234,7 @@ class DongleHID:
             print("Weird pose data.", len(data))
             hex_dump(data)
             return
-        idx, btns, pos, rot, acc, unk8, tracking_status = struct.unpack("<BB12s8s6s8sB", data[:0x25])
+        idx, btns, pos, rot, acc, rot_vel, tracking_status = struct.unpack("<BB12s8s6s8sB", data[:0x25])
         
         # tracking_status = 2 => pose + rot
         # tracking_status = 3 => rot only
@@ -236,8 +243,8 @@ class DongleHID:
         pos_arr = np.frombuffer(pos, dtype=np.float32, count=3)
         rot_arr = np.frombuffer(rot, dtype=np.float16, count=4)
         acc_arr = np.frombuffer(acc, dtype=np.float16, count=3)
-        unk8_arr = np.frombuffer(unk8, dtype=np.float16, count=4)
-        #print(f"({mac_str(mac)})", hex(idx), "btns:", hex(btns), "pos:", pos_arr, "rot:", rot_arr, "acc?:", acc_arr, "unk?:", unk8_arr, tracking_status, "time_delta", current_milli_time() - self.pose_time[mac_to_idx(mac)])
+        rot_vel_arr = np.frombuffer(rot_vel, dtype=np.float16, count=4)
+        #print(f"({mac_str(mac)})", hex(idx), pose_status_to_str(tracking_status), "btns:", hex(btns), "pos:", pos_arr, "rot:", rot_arr, "acc:", acc_arr, "rot_vel:", rot_vel_arr, "time_delta", current_milli_time() - self.pose_time[mac_to_idx(mac)])
 
         self.pose_quat[mac_to_idx(mac)] = rot_arr
         self.pose_pos[mac_to_idx(mac)] = pos_arr
@@ -290,21 +297,26 @@ class DongleHID:
                 args = parts[1]
                 
 
-                if idx == LAMBDA_GET_STATUS:
+                if idx == LAMBDA_PROP_GET_STATUS:
                     args = [int(s) for s in args.split(",")]
                     key_id = args[0]
                     state = args[1]
-                    print(f"   Status returned for SLAM key {slam_key_to_str(key_id)} ({mac_str(device_addr)}):", state)
+                    addendum = ""
 
                     if key_id == KEY_RECEIVED_HOST_ED:
-                        if state == 0:
-                            self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_ED}")
+                        #if state == 0:
+                        #    self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_ED}")
+                        pass
                     elif key_id == KEY_RECEIVED_HOST_MAP:
                         if state == 0:
-                            self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_MAP}")
+                            #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_MAP}")
+                            # TODO: when do we ask for maps?
+                            pass
                         else:
                             if self.bump_map_once[mac_to_idx(device_addr)]:
-                                #self.send_ack_to(mac_to_idx(device_addr), ACK_END_MAP)
+                                self.send_ack_to(mac_to_idx(device_addr), ACK_END_MAP)
+                                #self.send_ack_to(mac_to_idx(device_addr), ACK_TRACKING_MODE + "-1")
+                                #self.send_ack_to(mac_to_idx(device_addr), ACK_TRACKING_MODE + "1")
                                 self.bump_map_once[mac_to_idx(device_addr)] = False
                             #self.send_ack_to(mac_to_idx(paired_mac), ACK_END_MAP)
                             #self.send_ack_to_all(ACK_FW + "1")
@@ -312,7 +324,21 @@ class DongleHID:
                         #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
                         #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_ED}")
                         a='a'
-                        
+                    elif key_id == KEY_MAP_STATE:
+                        addendum = f"({map_status_to_str(state)})"
+                        if state == MAP_REBUILD_WAIT_FOR_STATIC:
+                            #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
+                            if self.bump_map_once_2[mac_to_idx(device_addr)]:
+                                self.send_ack_to(self.current_host_id, ACK_END_MAP)
+                                self.bump_map_once_2[mac_to_idx(device_addr)] = False
+                            #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_SET_STATUS + f"{KEY_MAP_STATE},{MAP_REBUILT}")
+                            #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_SET_STATUS + f"{KEY_CURRENT_TRACKING_STATE},{MAP_REBUILD_CREATE_MAP}")
+                        else:
+                            self.bump_map_once_2[mac_to_idx(device_addr)] = True
+                    elif key_id == KEY_CURRENT_TRACKING_STATE:
+                        addendum = f"({pose_status_to_str(state)})"
+
+                    print(f"   Status returned for SLAM key {slam_key_to_str(key_id)} ({mac_str(device_addr)}): {state} {addendum}")
 
                 else:
                     print(f"   Got PLAYER ACK ({mac_str(device_addr)}):", f"CMD{idx}", args)
@@ -362,7 +388,7 @@ class DongleHID:
             elif data[0:2] == ACK_MAP_STATUS:
                 data_real = data[2:]
                 status = [int(s) for s in data_real.split(",")]
-                print(f"   Got MAP_STATUS ({mac_str(device_addr)}):", status)
+                print(f"   Got MAP_STATUS ({mac_str(device_addr)}):", status, f"({map_status_to_str(status[1])})")
                 #self.send_ack_to_all(ACK_END_MAP)
 
                 # Initial map status:
@@ -498,12 +524,15 @@ class DongleHID:
             #if self.current_host_id == mac_to_idx(paired_mac):
             if self.current_host_id == mac_to_idx(paired_mac):
                 self.send_ack_to(mac_to_idx(paired_mac), ACK_END_MAP)
+            else:
+                self.send_ack_to(mac_to_idx(paired_mac), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
             #self.send_ack_to(mac_to_idx(paired_mac), ACK_ATW)
             #if self.current_host_id == mac_to_idx(paired_mac):
             #    self.send_ack_to(mac_to_idx(paired_mac), ACK_LAMBDA_SET_STATUS + f"{KEY_TRANSMISSION_READY},1")
 
-            self.send_ack_to_all(ACK_FW + "1")
+            #self.send_ack_to_all(ACK_FW + "1")
             #self.send_ack_to_all(ACK_FW + "0")
+            self.send_ack_to(mac_to_idx(paired_mac), ACK_FW + "1")
             
         elif resp[0] == DRESP_TRACKER_RF_STATUS or resp[0] == DRESP_TRACKER_NEW_RF_STATUS or resp[0] == 0x29:
             print(f"dump for {hex(resp[0])}:")
@@ -686,7 +715,7 @@ class TrackerHID:
             print("Weird pose data.", len(data))
             hex_dump(data)
             return
-        idx, btns, pos, rot, acc, unk8, tracking_status = struct.unpack("<BB12s8s6s8sB", data[:0x25])
+        idx, btns, pos, rot, acc, rot_vel, tracking_status = struct.unpack("<BB12s8s6s8sB", data[:0x25])
         
         # tracking_status = 2 => pose + rot
         # tracking_status = 3 => rot only
@@ -695,8 +724,8 @@ class TrackerHID:
         pos_arr = np.frombuffer(pos, dtype=np.float32, count=3)
         rot_arr = np.frombuffer(rot, dtype=np.float16, count=4)
         acc_arr = np.frombuffer(acc, dtype=np.float16, count=3)
-        unk8_arr = np.frombuffer(unk8, dtype=np.float16, count=4)
-        print(hex(idx), "btns:", hex(btns), "pos:", pos_arr, "rot:", rot_arr, "acc?:", acc_arr, "unk?:", unk8_arr, tracking_status, "time_delta", current_milli_time() - self.pose_time)
+        rot_vel_arr = np.frombuffer(rot_vel, dtype=np.float16, count=4)
+        print(hex(idx), pose_status_to_str(tracking_status), "btns:", hex(btns), "pos:", pos_arr, "rot:", rot_arr, "acc:", acc_arr, "rot_vel:", rot_vel_arr, "time_delta", current_milli_time() - self.pose_time)
 
         self.pose_quat = rot_arr
         self.pose_pos = pos_arr
