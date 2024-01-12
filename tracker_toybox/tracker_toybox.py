@@ -53,6 +53,8 @@ def mac_str(b):
     return hex(b[0])[2:] + ":" + hex(b[1])[2:] + ":" + hex(b[2])[2:] + ":" + hex(b[3])[2:] + ":" + hex(b[4])[2:] + ":" + hex(b[5])[2:] 
 
 def mac_to_idx(b):
+    if type(b) is int:
+        return b
     return b[1] & 0xF
 
 def do_u8_checksum(data):
@@ -235,12 +237,16 @@ class DongleHID:
     def client_has_host_map(self, device_addr):
         return self.has_host_map[mac_to_idx(device_addr)]
 
+    def is_client_connected(self, device_addr):
+        if self.is_host(device_addr): return True
+        return self.connected_to_host[mac_to_idx(device_addr)]
+
     def set_pose_callback(self, callback_fn, callback_ref):
         self.pose_callback = callback_fn
         self.pose_callback_ref = callback_ref
 
     def handle_map_state(self, device_addr, state):
-        if self.stuck_on_static[mac_to_idx(device_addr)] > 3:
+        if self.stuck_on_static[mac_to_idx(device_addr)] > 7:
             print("ok we're stuck, end the map again")
             self.bump_map_once_2[mac_to_idx(device_addr)] = True
             self.stuck_on_static[mac_to_idx(device_addr)] = 0
@@ -330,7 +336,7 @@ class DongleHID:
                         #    self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_ED}")
                         pass
                     elif key_id == KEY_RECEIVED_HOST_MAP:
-                        if state == 0 and (current_milli_time() - self.last_host_map_ask_ms) > 10000:
+                        if state == 0 and (current_milli_time() - self.last_host_map_ask_ms) > 10000 and self.is_client_connected(device_addr):
                             print("ask for map again")
                             self.last_host_map_ask_ms = current_milli_time()
                             #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
@@ -583,17 +589,19 @@ class DongleHID:
             if self.tick_periodic > 1000:
                 print("Tick!")
                 #self.send_ack_to_all(ACK_LAMBDA_MESSAGE + "1:0")
-                self.send_ack_to_all(ACK_LAMBDA_ASK_STATUS + f"{KEY_TRANSMISSION_READY}")
-                #self.send_ack_to_all(ACK_LAMBDA_ASK_STATUS + f"{KEY_RECEIVED_HOST_MAP}")
-                self.send_ack_to_all(ACK_LAMBDA_ASK_STATUS + f"{KEY_CURRENT_MAP_ID}")
-                self.send_ack_to_all(ACK_LAMBDA_ASK_STATUS + f"{KEY_MAP_STATE}")
-                self.send_ack_to_all(ACK_LAMBDA_ASK_STATUS + f"{KEY_CURRENT_TRACKING_STATE}")
+                
 
                 #self.send_ack_to_all(ACK_LAMBDA_SET_STATUS + f"{KEY_TRANSMISSION_READY},1")
                 #self.send_ack_to_all(ACK_ATW)
 
 
                 for i in range(0, 5):
+                    if not self.is_client_connected(i): continue
+                    self.send_ack_to(i, ACK_LAMBDA_ASK_STATUS + f"{KEY_TRANSMISSION_READY}")
+                    self.send_ack_to(i, ACK_LAMBDA_ASK_STATUS + f"{KEY_CURRENT_MAP_ID}")
+                    self.send_ack_to(i, ACK_LAMBDA_ASK_STATUS + f"{KEY_MAP_STATE}")
+                    self.send_ack_to(i, ACK_LAMBDA_ASK_STATUS + f"{KEY_CURRENT_TRACKING_STATE}")
+
                     #self.send_ack_to(i, ACK_NEW_ID + f"{i}")
                     #self.wifi_connect(i)
                     #self.wifi_set_ssid_full(i, self.wifi_info["ssid"])
