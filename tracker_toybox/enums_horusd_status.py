@@ -45,7 +45,8 @@ TRACKING_MODE_1 = 1 # gyro only? persist.lambda.3rdhost=0, persist.lambda.normal
 TRACKING_MODE_2 = 2 # body?
 TRACKING_MODE_SLAM_CLIENT = 11 # gyro only? persist.lambda.3rdhost=0, persist.lambda.normalmode=0 # client?
 TRACKING_MODE_21 = 21 # body tracking? persist.lambda.3rdhost
-TRACKING_MODE_SLAM_HOST = 22 # SLAM persist.lambda.3rdhost=1, persist.lambda.normalmode=0
+TRACKING_MODE_SLAM_HOST = 20 # SLAM persist.lambda.3rdhost=1, persist.lambda.normalmode=0
+# 22 also triggers wifi hosting but doesn't set as host?
 TRACKING_MODE_51 = 51 # SetUVCStatus?
 
 # GET_STATUS

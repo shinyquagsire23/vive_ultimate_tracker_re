@@ -316,7 +316,8 @@ class DongleHID:
                         #self.send_ack_to(mac_to_idx(device_addr), ACK_END_MAP)
                         pass
                     else:
-                        self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
+                        #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
+                        pass
                     self.send_ack_to(mac_to_idx(device_addr), ACK_FW + "1")
             elif data[0:1] == ACK_CATEGORY_PLAYER:
                 data_real = data[1:]
@@ -340,7 +341,8 @@ class DongleHID:
                             print("ask for map again")
                             self.last_host_map_ask_ms = current_milli_time()
                             #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
-                            self.send_ack_to(self.current_host_id, ACK_LAMBDA_COMMAND + f"{ASK_MAP}")
+                            #self.send_ack_to(self.current_host_id, ACK_LAMBDA_COMMAND + f"{ASK_MAP}") # doesn't work?
+                            #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_MAP}") # doesn't do anything?
                             # TODO: when do we ask for maps?
                             self.bump_map_once[mac_to_idx(device_addr)] = True
                             self.has_host_map[mac_to_idx(device_addr)] = False
