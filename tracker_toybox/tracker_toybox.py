@@ -22,6 +22,7 @@ from enums_horusd_dongle import *
 # client trackers sometimes need:
 # adb shell rm -rf /data/lambda/ 
 # adb shell mkdir -p /data/lambda/
+# adb shell rm /data/mapdata/\*
 
 # adb shell cat /data/tracking_log/horusd.log.0
 # adb shell cat /data/tracking_log/slam.log.1
@@ -86,6 +87,7 @@ class DongleHID:
         self.stuck_on_not_checked = [0]*5
         self.connected_to_host = [False]*5
         self.has_host_map = [False]*5
+        self.tracker_map_state = [0]*5
 
         self.last_host_map_ask_ms = current_milli_time()
 
@@ -228,6 +230,9 @@ class DongleHID:
         hex_dump(out_data)
         return self.send_cmd(DCMD_F4, out_data)
 
+    def lambda_end_map(self, device_addr):
+        self.send_ack_to(mac_to_idx(device_addr), ACK_END_MAP)
+
     def is_host(self, device_addr):
         return mac_to_idx(device_addr) == self.current_host_id
 
@@ -241,11 +246,16 @@ class DongleHID:
         if self.is_host(device_addr): return True
         return self.connected_to_host[mac_to_idx(device_addr)]
 
+    def get_map_state(self, device_addr):
+        return self.tracker_map_state[mac_to_idx(device_addr)]
+
     def set_pose_callback(self, callback_fn, callback_ref):
         self.pose_callback = callback_fn
         self.pose_callback_ref = callback_ref
 
     def handle_map_state(self, device_addr, state):
+        self.tracker_map_state[mac_to_idx(device_addr)] = state
+
         if self.stuck_on_static[mac_to_idx(device_addr)] > 7:
             print("ok we're stuck, end the map again")
             self.bump_map_once_2[mac_to_idx(device_addr)] = True
@@ -263,8 +273,8 @@ class DongleHID:
             if self.bump_map_once_2[mac_to_idx(device_addr)]:
                 if self.is_client(device_addr):
                     print("End the map?")
-                    self.send_ack_to(self.current_host_id, ACK_END_MAP)
-                    #self.send_ack_to(mac_to_idx(device_addr), ACK_END_MAP)
+                    #self.lambda_end_map(self.current_host_id)
+                    #self.lambda_end_map(device_addr)
                     #self.send_ack_to(self.current_host_id, ACK_LAMBDA_COMMAND + f"{ASK_MAP}")
                     #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
                 self.bump_map_once_2[mac_to_idx(device_addr)] = False
@@ -277,7 +287,7 @@ class DongleHID:
         if state == MAP_EXIST:
             if self.stuck_on_exists[mac_to_idx(device_addr)] == 0:# and self.is_host(device_addr):
                 print("ok we're stuck on exists, end the map again")
-                self.send_ack_to(mac_to_idx(device_addr), ACK_END_MAP)
+                #self.lambda_end_map(device_addr)
             self.stuck_on_exists[mac_to_idx(device_addr)] += 1
         else:
             self.stuck_on_exists[mac_to_idx(device_addr)] = 0
@@ -285,10 +295,157 @@ class DongleHID:
         if state == MAP_NOT_CHECKED:
             if self.stuck_on_not_checked[mac_to_idx(device_addr)] == 0 and self.is_client(device_addr) and self.client_has_host_map(device_addr):
                 print("ok we're stuck on not checked, end the map again")
-                self.send_ack_to(mac_to_idx(device_addr), ACK_END_MAP)
+                self.lambda_end_map(device_addr)
             self.stuck_on_not_checked[mac_to_idx(device_addr)] += 1
         else:
             self.stuck_on_not_checked[mac_to_idx(device_addr)] = 0
+
+    def parse_ack(self, data_raw, device_addr):
+        data = data_raw.decode("utf-8")
+        if data[0:1] == ACK_CATEGORY_CALIB_1:
+            data_real = data[1:]
+            self.calib_1 += data_real
+            print(f"   Got CALIB_1 ({mac_str(device_addr)}):", self.calib_1)
+        elif data[0:1] == ACK_CATEGORY_CALIB_2:
+            data_real = data[1:]
+            self.calib_2 += data_real
+            print(f"   Got CALIB_2 ({mac_str(device_addr)}):", self.calib_2)
+        elif data[0:1] == ACK_CATEGORY_DEVICE_INFO:
+            data_real = data[1:]
+            print(f"   Got device info ACK ({mac_str(device_addr)}):", data_real[:3])
+
+            # Handle post-deviceinfo commands
+            if data_real[0:3] == ACK_AZZ:
+                if self.is_host(device_addr):
+                    #self.lambda_end_map(device_addr)
+                    pass
+                else:
+                    self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
+                    pass
+                self.send_ack_to(mac_to_idx(device_addr), ACK_FW + "1")
+        elif data[0:1] == ACK_CATEGORY_PLAYER:
+            data_real = data[1:]
+            parts = data_real.split(":")
+            idx = int(parts[0])
+            args = parts[1]
+            
+
+            if idx == LAMBDA_PROP_GET_STATUS:
+                args = [int(s) for s in args.split(",")]
+                key_id = args[0]
+                state = args[1]
+                addendum = ""
+
+                if key_id == KEY_RECEIVED_HOST_ED:
+                    #if state == 0:
+                    #    self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_ED}")
+                    pass
+                elif key_id == KEY_RECEIVED_HOST_MAP:
+                    if state == 0 and (current_milli_time() - self.last_host_map_ask_ms) > 10000 and self.is_client_connected(device_addr):
+                        print("ask for map again")
+                        self.last_host_map_ask_ms = current_milli_time()
+                        #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
+                        #self.send_ack_to(self.current_host_id, ACK_LAMBDA_COMMAND + f"{ASK_MAP}") # doesn't work?
+                        self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_MAP}") # doesn't do anything?
+                        # TODO: when do we ask for maps?
+                        self.bump_map_once[mac_to_idx(device_addr)] = True
+                        self.has_host_map[mac_to_idx(device_addr)] = False
+                        pass
+                    else:
+                        if state > 0:
+                            self.has_host_map[mac_to_idx(device_addr)] = True
+                        if self.bump_map_once[mac_to_idx(device_addr)]:
+                            #self.send_ack_to(mac_to_idx(device_addr), ACK_END_MAP)
+                            #self.send_ack_to(mac_to_idx(device_addr), ACK_TRACKING_MODE + "-1")
+                            #self.send_ack_to(mac_to_idx(device_addr), ACK_TRACKING_MODE + "1")
+                            self.bump_map_once[mac_to_idx(device_addr)] = False
+                        #self.send_ack_to(mac_to_idx(paired_mac), ACK_END_MAP)
+                        #self.send_ack_to_all(ACK_FW + "1")
+                elif key_id == KEY_TRANSMISSION_READY:
+                    #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
+                    #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_ED}")
+                    a='a'
+                elif key_id == KEY_MAP_STATE:
+                    addendum = f"({map_status_to_str(state)})"
+
+                    self.handle_map_state(device_addr, state)
+                elif key_id == KEY_CURRENT_TRACKING_STATE:
+                    addendum = f"({pose_status_to_str(state)})"
+
+                print(f"   Status returned for SLAM key {slam_key_to_str(key_id)} ({mac_str(device_addr)}): {state} {addendum}")
+
+            else:
+                print(f"   Got PLAYER ACK ({mac_str(device_addr)}):", f"CMD{idx}", args)
+        elif data[0:2] == ACK_LAMBDA_PROPERTY:
+            data_real = data[2:]
+            print(f"   Got LP ACK ({mac_str(device_addr)}):", data_real)
+        elif data[0:2] == ACK_LAMBDA_STATUS:
+            data_real = data[2:]
+            a, b, c = [int(s) for s in data_real.split(",")]
+            print(f"   Got LAMBDA_STATUS ACK ({mac_str(device_addr)}): {a},{b},{c}")
+            self.send_ack_to_all(ACK_FW + "0")
+            if b != 2:
+                #print("ask for host map.")
+                #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_ED}")
+                #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_MAP}")
+                #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{KF_SYNC}")
+                pass
+                
+        elif data[0:4] == ACK_ERROR_CODE:
+            data_real = data[4:]
+            print(f"   Got ERROR ({mac_str(device_addr)}):", data_real)
+        elif data[0:2] == ACK_WIFI_HOST_SSID:
+            data_real = data[2:]
+            ssid, passwd, freq = data_real.split(",")
+            print(f"   Got WIFI_HOST_SSID ACK ({mac_str(device_addr)}): ssid={ssid}, pass={passwd}, freq={freq}")
+
+            self.host_ssid = ssid
+            self.host_passwd = passwd
+            self.host_freq = freq
+        elif data[0:2] == ACK_WIFI_SSID_PASS:
+            print(f"   Got WIFI_SSID ACK ({mac_str(device_addr)})")
+
+            self.wifi_set_ssid_full(mac_to_idx(device_addr), self.host_ssid[:8])
+            self.wifi_set_ssid_append(mac_to_idx(device_addr), self.host_ssid[8:])
+            self.wifi_set_password(mac_to_idx(device_addr), self.host_passwd)
+            #self.wifi_set_ssid_password(mac_to_idx(device_addr), self.host_ssid, self.host_passwd)
+            self.wifi_set_freq(mac_to_idx(device_addr), self.host_freq)
+            self.wifi_set_country(mac_to_idx(device_addr), self.wifi_info["country"])
+        elif data[0:2] == ACK_WIFI_CONNECT:
+            ret = int(data[2:])
+            print(f"   Got WIFI_CONNECT ACK ({mac_str(device_addr)}): {ret}")
+            self.connected_to_host[mac_to_idx(device_addr)] = (ret > 0)
+            
+
+        elif data[0:2] == ACK_MAP_STATUS:
+            data_real = data[2:]
+            status = [int(s) for s in data_real.split(",")]
+
+            self.handle_map_state(device_addr, status[1])
+
+            print(f"   Got MAP_STATUS ({mac_str(device_addr)}):", status, f"({map_status_to_str(status[1])})")
+            #self.send_ack_to_all(ACK_END_MAP)
+
+            # Initial map status:
+            # Got MAP_STATUS: -1,10
+            # Got MAP_STATUS: 0,10
+            # Got MAP_STATUS: 0,3
+
+            # Losing tracking?
+            # Got LP ACK: 1,0,1
+            # Got MAP_STATUS: -1,0
+            # Got MAP_STATUS: -1,1
+
+            # Got MAP_STATUS: 0,6 = mapped and tracking
+        elif data[0:3] == ACK_POWER_OFF:
+            print(f".  Got POWER_OFF. ({mac_str(device_addr)})")
+            self.handle_disconnected(mac_to_idx(device_addr))
+        elif data[0:3] == ACK_RESET:
+            print(f".  Got RESET ({mac_str(device_addr)}).")
+            self.handle_disconnected(mac_to_idx(device_addr))
+        else:
+            print(f"   Got ACK ({mac_str(device_addr)}):", data, "(", data_raw, ")")
+        print("")
 
     def parse_tracker_incoming(self, resp):
         cmd_id, pkt_idx, device_addr, type_maybe, data_len = struct.unpack("<BH6sHB", resp[:0xC])
@@ -297,157 +454,13 @@ class DongleHID:
 
         if type_maybe == 0x101:
             data_raw = resp[0xC:0xC+data_len]
-            data = data_raw.decode("utf-8")
-            if data[0:1] == ACK_CATEGORY_CALIB_1:
-                data_real = data[1:]
-                self.calib_1 += data_real
-                print(f"   Got CALIB_1 ({mac_str(device_addr)}):", self.calib_1)
-            elif data[0:1] == ACK_CATEGORY_CALIB_2:
-                data_real = data[1:]
-                self.calib_2 += data_real
-                print(f"   Got CALIB_2 ({mac_str(device_addr)}):", self.calib_2)
-            elif data[0:1] == ACK_CATEGORY_DEVICE_INFO:
-                data_real = data[1:]
-                print(f"   Got device info ACK ({mac_str(device_addr)}):", data_real[:3])
-
-                # Handle post-deviceinfo commands
-                if data_real[0:3] == ACK_AZZ:
-                    if self.is_host(device_addr):
-                        #self.send_ack_to(mac_to_idx(device_addr), ACK_END_MAP)
-                        pass
-                    else:
-                        #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
-                        pass
-                    self.send_ack_to(mac_to_idx(device_addr), ACK_FW + "1")
-            elif data[0:1] == ACK_CATEGORY_PLAYER:
-                data_real = data[1:]
-                parts = data_real.split(":")
-                idx = int(parts[0])
-                args = parts[1]
-                
-
-                if idx == LAMBDA_PROP_GET_STATUS:
-                    args = [int(s) for s in args.split(",")]
-                    key_id = args[0]
-                    state = args[1]
-                    addendum = ""
-
-                    if key_id == KEY_RECEIVED_HOST_ED:
-                        #if state == 0:
-                        #    self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_ED}")
-                        pass
-                    elif key_id == KEY_RECEIVED_HOST_MAP:
-                        if state == 0 and (current_milli_time() - self.last_host_map_ask_ms) > 10000 and self.is_client_connected(device_addr):
-                            print("ask for map again")
-                            self.last_host_map_ask_ms = current_milli_time()
-                            #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
-                            #self.send_ack_to(self.current_host_id, ACK_LAMBDA_COMMAND + f"{ASK_MAP}") # doesn't work?
-                            #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_MAP}") # doesn't do anything?
-                            # TODO: when do we ask for maps?
-                            self.bump_map_once[mac_to_idx(device_addr)] = True
-                            self.has_host_map[mac_to_idx(device_addr)] = False
-                            pass
-                        else:
-                            if state > 0:
-                                self.has_host_map[mac_to_idx(device_addr)] = True
-                            if self.bump_map_once[mac_to_idx(device_addr)]:
-                                #self.send_ack_to(mac_to_idx(device_addr), ACK_END_MAP)
-                                #self.send_ack_to(mac_to_idx(device_addr), ACK_TRACKING_MODE + "-1")
-                                #self.send_ack_to(mac_to_idx(device_addr), ACK_TRACKING_MODE + "1")
-                                self.bump_map_once[mac_to_idx(device_addr)] = False
-                            #self.send_ack_to(mac_to_idx(paired_mac), ACK_END_MAP)
-                            #self.send_ack_to_all(ACK_FW + "1")
-                    elif key_id == KEY_TRANSMISSION_READY:
-                        #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{RESET_MAP}")
-                        #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_ED}")
-                        a='a'
-                    elif key_id == KEY_MAP_STATE:
-                        addendum = f"({map_status_to_str(state)})"
-
-                        self.handle_map_state(device_addr, state)
-                    elif key_id == KEY_CURRENT_TRACKING_STATE:
-                        addendum = f"({pose_status_to_str(state)})"
-
-                    print(f"   Status returned for SLAM key {slam_key_to_str(key_id)} ({mac_str(device_addr)}): {state} {addendum}")
-
-                else:
-                    print(f"   Got PLAYER ACK ({mac_str(device_addr)}):", f"CMD{idx}", args)
-            elif data[0:2] == ACK_LAMBDA_PROPERTY:
-                data_real = data[2:]
-                print(f"   Got LP ACK ({mac_str(device_addr)}):", data_real)
-            elif data[0:2] == ACK_LAMBDA_STATUS:
-                data_real = data[2:]
-                a, b, c = [int(s) for s in data_real.split(",")]
-                print(f"   Got LAMBDA_STATUS ACK ({mac_str(device_addr)}): {a},{b},{c}")
-                self.send_ack_to_all(ACK_FW + "0")
-                if b != 2:
-                    #print("ask for host map.")
-                    #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_ED}")
-                    #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{ASK_MAP}")
-                    #self.send_ack_to(mac_to_idx(device_addr), ACK_LAMBDA_COMMAND + f"{KF_SYNC}")
-                    pass
-                    
-            elif data[0:4] == ACK_ERROR_CODE:
-                data_real = data[4:]
-                print(f"   Got ERROR ({mac_str(device_addr)}):", data_real)
-            elif data[0:2] == ACK_WIFI_HOST_SSID:
-                data_real = data[2:]
-                ssid, passwd, freq = data_real.split(",")
-                print(f"   Got WIFI_HOST_SSID ACK ({mac_str(device_addr)}): ssid={ssid}, pass={passwd}, freq={freq}")
-
-                self.host_ssid = ssid
-                self.host_passwd = passwd
-                self.host_freq = freq
-            elif data[0:2] == ACK_WIFI_SSID_PASS:
-                print(f"   Got WIFI_SSID ACK ({mac_str(device_addr)})")
-
-                self.wifi_set_ssid_full(mac_to_idx(device_addr), self.host_ssid[:8])
-                self.wifi_set_ssid_append(mac_to_idx(device_addr), self.host_ssid[8:])
-                self.wifi_set_password(mac_to_idx(device_addr), self.host_passwd)
-                #self.wifi_set_ssid_password(mac_to_idx(device_addr), self.host_ssid, self.host_passwd)
-                self.wifi_set_freq(mac_to_idx(device_addr), self.host_freq)
-                self.wifi_set_country(mac_to_idx(device_addr), self.wifi_info["country"])
-            elif data[0:2] == ACK_WIFI_CONNECT:
-                ret = int(data[2:])
-                print(f"   Got WIFI_CONNECT ACK ({mac_str(device_addr)}): {ret}")
-                self.connected_to_host[mac_to_idx(device_addr)] = (ret > 0)
-                
-
-            elif data[0:2] == ACK_MAP_STATUS:
-                data_real = data[2:]
-                status = [int(s) for s in data_real.split(",")]
-
-                self.handle_map_state(device_addr, status[1])
-
-                print(f"   Got MAP_STATUS ({mac_str(device_addr)}):", status, f"({map_status_to_str(status[1])})")
-                #self.send_ack_to_all(ACK_END_MAP)
-
-                # Initial map status:
-                # Got MAP_STATUS: -1,10
-                # Got MAP_STATUS: 0,10
-                # Got MAP_STATUS: 0,3
-
-                # Losing tracking?
-                # Got LP ACK: 1,0,1
-                # Got MAP_STATUS: -1,0
-                # Got MAP_STATUS: -1,1
-
-                # Got MAP_STATUS: 0,6 = mapped and tracking
-            elif data[0:3] == ACK_POWER_OFF:
-                print(f".  Got POWER_OFF. ({mac_str(device_addr)})")
-                self.handle_disconnected(mac_to_idx(device_addr))
-            elif data[0:3] == ACK_RESET:
-                print(f".  Got RESET ({mac_str(device_addr)}).")
-                self.handle_disconnected(mac_to_idx(device_addr))
-            else:
-                print(f"   Got ACK ({mac_str(device_addr)}):", data, "(", data_raw, ")")
-            print("")
+            self.parse_ack(data_raw, device_addr)
             return
         elif type_maybe == 0x110:
             data = resp[0xC:0xC+data_len]
             #self.parse_pose_data(device_addr, data)
             if self.pose_callback:
-                self.pose_callback(self.pose_callback_ref, device_addr, data)
+                self.pose_callback(self, device_addr, data)
             return
 
         data = resp[0xC:0xC+data_len]
@@ -506,6 +519,7 @@ class DongleHID:
         self.stuck_on_exists[idx] = 0
         self.stuck_on_not_checked[idx] = 0
         self.has_host_map[idx] = False
+        self.tracker_map_state[idx] = 0
 
     def do_loop(self):
         resp = self.device_hid1.read(0x400)
@@ -743,7 +757,7 @@ class TrackerHID:
                 print("Pose data", i, "len", hex(pose_len), "ts", pose_timestamp)
                 #hex_dump(pose_data)
                 if self.pose_callback:
-                    self.pose_callback(self.pose_callback_ref, bytes([0]*6), pose_data)
+                    self.pose_callback(self, bytes([0]*6), pose_data)
         netsync_str = "netsync: "
         for i in range(0, 7):
             a,b = struct.unpack("<QQ", resp[0x2ce+(i*0x10):0x2ce+(i*0x10)+0x10])
@@ -789,6 +803,9 @@ class ViveTrackerGroup():
         self.pose_quat = [[0.0, 0.0, 0.0, 1.0]] * 5
         self.pose_pos = [[0.0, 0.0, 0.0]] * 5
         self.pose_time = [0] * 5
+        self.pose_btns = [0]*5
+        self.last_pose_btns = [0]*5
+        #self.wip_pose_btns = [0]*5
 
         # TODO: mix of multiple?
         if mode == "DONGLE_USB":
@@ -798,7 +815,8 @@ class ViveTrackerGroup():
 
         self.comms.set_pose_callback(self.parse_pose_data, self)
 
-    def parse_pose_data(comms, self, mac, data):
+    def parse_pose_data(self, comms, mac, data):
+        #print(comms, self)
         self.poses_recvd[mac_to_idx(mac)] += 1
 
         if len(data) == 0x2:
@@ -822,9 +840,21 @@ class ViveTrackerGroup():
         rot_vel_arr = np.frombuffer(rot_vel, dtype=np.float16, count=4)
         #print(f"({mac_str(mac)})", hex(idx), pose_status_to_str(tracking_status), "btns:", hex(btns), "pos:", pos_arr, "rot:", rot_arr, "acc:", acc_arr, "rot_vel:", rot_vel_arr, "time_delta", current_milli_time() - self.pose_time[mac_to_idx(mac)])
 
+        #print(hex(idx), hex(btns), hex(self.pose_btns[mac_to_idx(mac)]), hex(self.last_pose_btns[mac_to_idx(mac)]))
         self.pose_quat[mac_to_idx(mac)] = rot_arr
         self.pose_pos[mac_to_idx(mac)] = pos_arr
         self.pose_time[mac_to_idx(mac)] = current_milli_time()
+
+        if btns & 0x80:
+            self.last_pose_btns[mac_to_idx(mac)] = self.pose_btns[mac_to_idx(mac)]
+            self.pose_btns[mac_to_idx(mac)] = ((btns & 0x7F) << 8) | self.pose_btns[mac_to_idx(mac)] & 0xFF
+        else:
+            self.last_pose_btns[mac_to_idx(mac)] = self.pose_btns[mac_to_idx(mac)]
+            self.pose_btns[mac_to_idx(mac)] = btns | self.pose_btns[mac_to_idx(mac)] & 0xFF00
+
+        if (self.pose_btns[mac_to_idx(mac)] & 0x100) == 0x100 and (self.last_pose_btns[mac_to_idx(mac)] & 0x100) == 0x0:# and comms.get_map_state(mac) == MAP_EXIST:
+            print("end map.")
+            comms.lambda_end_map(mac)
 
     def get_pos(self, idx=0):
         return np.array(self.pose_pos[idx])
