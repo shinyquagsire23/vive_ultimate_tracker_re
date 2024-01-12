@@ -119,9 +119,9 @@ BLACK, RED, GREEN, BLUE = (0, 0, 0), (255, 128, 128), (128, 255, 128), (128, 128
 
 
 class Paint:
-    def __init__(self, shapes, dongle):
+    def __init__(self, shapes, trackers):
         self.__shapes = shapes
-        self.__dongle = dongle
+        self.__trackers = trackers
         self.__size = 1000, 1000
         self.__clock = pygame.time.Clock()
         self.__screen = pygame.display.set_mode(self.__size)
@@ -169,10 +169,10 @@ class Paint:
             pygame.display.flip()
 
             for i in range(0, 5):
-                #print(self.__dongle.get_pos(i), self.__dongle.get_rot(i))
-                self.__shapes[i].set_pos(self.__dongle.get_pos(i) * -10.0)
-                self.__shapes[i].set_quat(self.__dongle.get_rot(i))
-            self.__dongle.do_loop()
+                #print(self.__trackers.get_pos(i), self.__trackers.get_rot(i))
+                self.__shapes[i].set_pos(self.__trackers.get_pos(i) * -10.0)
+                self.__shapes[i].set_quat(self.__trackers.get_rot(i))
+            self.__trackers.do_loop()
 
 ######################
 #                    #
@@ -191,13 +191,12 @@ def main():
             edges=({0, 1}, {0, 2}, {0, 3})
         )
 
-    dongle = DongleHID()
-    #dongle = TrackerHID()
+    trackers = ViveTrackerGroup()
 
     pygame.init()
     pygame.font.init()
     pygame.display.set_caption('Control -   q,w : X    a,s : Y    z,x : Z')
-    Paint(cubes, dongle)
+    Paint(cubes, trackers)
 
 if __name__ == '__main__':
     main()
