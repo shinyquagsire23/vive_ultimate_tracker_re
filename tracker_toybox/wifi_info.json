@@ -1,5 +1,6 @@
 {
     "ssid": "test_5G",
     "pass": "testtest",
-    "country": "US"
+    "country": "US",
+    "freq": 5240
 }
